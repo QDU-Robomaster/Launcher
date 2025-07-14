@@ -1,20 +1,20 @@
 /* USER CODE BEGIN Header */
 /**
- ******************************************************************************
- * @file    stm32f4xx_it.c
- * @brief   Interrupt Service Routines.
- ******************************************************************************
- * @attention
- *
- * Copyright (c) 2025 STMicroelectronics.
- * All rights reserved.
- *
- * This software is licensed under terms that can be found in the LICENSE file
- * in the root directory of this software component.
- * If no LICENSE file comes with this software, it is provided AS-IS.
- *
- ******************************************************************************
- */
+  ******************************************************************************
+  * @file    stm32f4xx_it.c
+  * @brief   Interrupt Service Routines.
+  ******************************************************************************
+  * @attention
+  *
+  * Copyright (c) 2025 STMicroelectronics.
+  * All rights reserved.
+  *
+  * This software is licensed under terms that can be found in the LICENSE file
+  * in the root directory of this software component.
+  * If no LICENSE file comes with this software, it is provided AS-IS.
+  *
+  ******************************************************************************
+  */
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
@@ -51,14 +51,7 @@
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-/* LibXR USB Tx Cplt callback (Auto-generated, For STM32F1) */
-#if defined(STM32F1) && defined(HAL_PCD_MODULE_ENABLED)
-extern void STM32_USB_ISR_Handler_F1(void);
-#endif
-/* LibXR UART IDLE callback (Auto-generated) */
-#ifdef HAL_UART_MODULE_ENABLED
-extern void STM32_UART_ISR_Handler_IDLE(UART_HandleTypeDef *huart);
-#endif
+
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
@@ -85,36 +78,7 @@ extern UART_HandleTypeDef huart6;
 extern TIM_HandleTypeDef htim2;
 
 /* USER CODE BEGIN EV */
-void GetRegistersFromStack(uint32_t *pulFaultStackAddress) {
-  /* These are volatile to try and prevent the compiler/linker optimising them
-  away as the variables never actually get used.  If the debugger won't show the
-  values of the variables, make them global my moving their declaration outside
-  of this function. */
-  volatile __attribute__((unused)) uint32_t r0;
-  volatile __attribute__((unused)) uint32_t r1;
-  volatile __attribute__((unused)) uint32_t r2;
-  volatile __attribute__((unused)) uint32_t r3;
-  volatile __attribute__((unused)) uint32_t r12;
-  volatile __attribute__((unused)) uint32_t lr;  /* Link register. */
-  volatile __attribute__((unused)) uint32_t pc;  /* Program counter. */
-  volatile __attribute__((unused)) uint32_t psr; /* Program status register. */
 
-  r0 = pulFaultStackAddress[0];
-  r1 = pulFaultStackAddress[1];
-  r2 = pulFaultStackAddress[2];
-  r3 = pulFaultStackAddress[3];
-
-  r12 = pulFaultStackAddress[4];
-  lr = pulFaultStackAddress[5];
-  pc = pulFaultStackAddress[6];
-  psr = pulFaultStackAddress[7];
-
-  /* When the following line is hit, the variables contain the register values.
-   */
-  while (1) {
-    __NOP();
-  }
-}
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -129,7 +93,8 @@ void NMI_Handler(void)
 
   /* USER CODE END NonMaskableInt_IRQn 0 */
   /* USER CODE BEGIN NonMaskableInt_IRQn 1 */
-  while (1) {
+   while (1)
+  {
   }
   /* USER CODE END NonMaskableInt_IRQn 1 */
 }
@@ -140,15 +105,6 @@ void NMI_Handler(void)
 void HardFault_Handler(void)
 {
   /* USER CODE BEGIN HardFault_IRQn 0 */
-  __asm volatile(
-      " tst lr, #4                                                \n"
-      " ite eq                                                    \n"
-      " mrseq r0, msp                                             \n"
-      " mrsne r0, psp                                             \n"
-      " ldr r1, [r0, #24]                                         \n"
-      " ldr r2, handler2_address_const                            \n"
-      " bx r2                                                     \n"
-      " handler2_address_const: .word GetRegistersFromStack       \n");
 
   /* USER CODE END HardFault_IRQn 0 */
   while (1)
@@ -411,10 +367,6 @@ void SPI1_IRQHandler(void)
 void USART1_IRQHandler(void)
 {
   /* USER CODE BEGIN USART1_IRQn 0 */
-  /* LibXR UART IDLE callback (Auto-generated) */
-#ifdef HAL_UART_MODULE_ENABLED
-  STM32_UART_ISR_Handler_IDLE(&huart1);
-#endif
 
   /* USER CODE END USART1_IRQn 0 */
   HAL_UART_IRQHandler(&huart1);
@@ -429,10 +381,6 @@ void USART1_IRQHandler(void)
 void USART3_IRQHandler(void)
 {
   /* USER CODE BEGIN USART3_IRQn 0 */
-  /* LibXR UART IDLE callback (Auto-generated) */
-#ifdef HAL_UART_MODULE_ENABLED
-  STM32_UART_ISR_Handler_IDLE(&huart3);
-#endif
 
   /* USER CODE END USART3_IRQn 0 */
   HAL_UART_IRQHandler(&huart3);
@@ -615,14 +563,10 @@ void DMA2_Stream7_IRQHandler(void)
 void USART6_IRQHandler(void)
 {
   /* USER CODE BEGIN USART6_IRQn 0 */
-  /* LibXR UART IDLE callback (Auto-generated) */
-#ifdef HAL_UART_MODULE_ENABLED
-  STM32_UART_ISR_Handler_IDLE(&huart6);
-#endif
+
   /* USER CODE END USART6_IRQn 0 */
   HAL_UART_IRQHandler(&huart6);
   /* USER CODE BEGIN USART6_IRQn 1 */
-  /* LibXR UART IDLE callback (Auto-generated) */
 
   /* USER CODE END USART6_IRQn 1 */
 }
