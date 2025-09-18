@@ -1,6 +1,6 @@
 {
   "device": "STM32F407IGH6",
-  "toolchain": "CLANG",
+  "toolchain": "CLANG_GCC",
   "core": "Cortex-M4",
   "order": 0
 }

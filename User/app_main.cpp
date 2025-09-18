@@ -1,11 +1,13 @@
 #include "app_main.h"
 
+#include "cdc.hpp"
 #include "libxr.hpp"
 #include "main.h"
 #include "stm32_adc.hpp"
 #include "stm32_can.hpp"
 #include "stm32_canfd.hpp"
 #include "stm32_dac.hpp"
+#include "stm32_flash.hpp"
 #include "stm32_gpio.hpp"
 #include "stm32_i2c.hpp"
 #include "stm32_power.hpp"
@@ -13,7 +15,7 @@
 #include "stm32_spi.hpp"
 #include "stm32_timebase.hpp"
 #include "stm32_uart.hpp"
-#include "stm32_usb.hpp"
+#include "stm32_usb_dev.hpp"
 #include "stm32_watchdog.hpp"
 #include "flash_map.hpp"
 #include "app_framework.hpp"
@@ -22,8 +24,9 @@
 using namespace LibXR;
 
 /* User Code Begin 1 */
-#include "stm32_flash.hpp"
 /* User Code End 1 */
+// NOLINTBEGIN
+// clang-format off
 /* External HAL Declarations */
 extern ADC_HandleTypeDef hadc3;
 extern CAN_HandleTypeDef hcan1;
@@ -31,6 +34,8 @@ extern CAN_HandleTypeDef hcan2;
 extern I2C_HandleTypeDef hi2c1;
 extern I2C_HandleTypeDef hi2c2;
 extern I2C_HandleTypeDef hi2c3;
+extern PCD_HandleTypeDef hpcd_USB_OTG_FS;
+extern PCD_HandleTypeDef hpcd_USB_OTG_HS;
 extern SPI_HandleTypeDef hspi1;
 extern TIM_HandleTypeDef htim10;
 extern TIM_HandleTypeDef htim1;
@@ -43,9 +48,6 @@ extern TIM_HandleTypeDef htim8;
 extern UART_HandleTypeDef huart1;
 extern UART_HandleTypeDef huart3;
 extern UART_HandleTypeDef huart6;
-extern USBD_HandleTypeDef hUsbDeviceFS;
-extern uint8_t UserRxBufferFS[APP_RX_DATA_SIZE];
-extern uint8_t UserTxBufferFS[APP_TX_DATA_SIZE];
 
 /* DMA Resources */
 static uint16_t adc3_buf[64];
@@ -59,11 +61,25 @@ static uint8_t usart6_rx_buf[512];
 static uint8_t i2c1_buf[32];
 static uint8_t i2c2_buf[32];
 static uint8_t i2c3_buf[32];
+static uint8_t usb_otg_hs_ep0_in_buf[8];
+static uint8_t usb_otg_hs_ep0_out_buf[8];
+static uint8_t usb_otg_hs_ep1_in_buf[128];
+static uint8_t usb_otg_hs_ep1_out_buf[128];
+static uint8_t usb_otg_hs_ep2_in_buf[8];
+static uint8_t usb_otg_fs_ep0_in_buf[8];
+static uint8_t usb_otg_fs_ep0_out_buf[8];
+static uint8_t usb_otg_fs_ep1_in_buf[128];
+static uint8_t usb_otg_fs_ep1_out_buf[128];
+static uint8_t usb_otg_fs_ep2_in_buf[8];
 
 extern "C" void app_main(void) {
+  // clang-format on
+  // NOLINTEND
   /* User Code Begin 2 */
   
   /* User Code End 2 */
+  // clang-format off
+  // NOLINTBEGIN
   STM32TimerTimebase timebase(&htim2);
   PlatformInit(2, 2048);
   STM32PowerManager power_manager;
@@ -83,8 +99,7 @@ extern "C" void app_main(void) {
   STM32GPIO LED_G(LED_G_GPIO_Port, LED_G_Pin);
   STM32GPIO LED_R(LED_R_GPIO_Port, LED_R_Pin);
 
-  std::array<uint32_t, 1> adc3_channels = {ADC_CHANNEL_8};
-  STM32ADC adc3(&hadc3, adc3_buf, &adc3_channels[0], 1, 3.3);
+  STM32ADC adc3(&hadc3, adc3_buf, {ADC_CHANNEL_8}, 3.3);
   auto adc3_adc_channel_8 = adc3.GetChannel(0);
   UNUSED(adc3_adc_channel_8);
 
@@ -124,9 +139,42 @@ extern "C" void app_main(void) {
 
   STM32CAN can2(&hcan2, 5);
 
-  STM32VirtualUART uart_cdc(hUsbDeviceFS, UserTxBufferFS, UserRxBufferFS, 15);
-  STDIO::read_ = uart_cdc.read_port_;
-  STDIO::write_ = uart_cdc.write_port_;
+  static constexpr auto USB_OTG_HS_LANG_PACK = LibXR::USB::DescriptorStrings::MakeLanguagePack(LibXR::USB::DescriptorStrings::Language::EN_US, "XRobot", "STM32 XRUSB USB_OTG_HS CDC Demo", "123456789");
+  LibXR::USB::CDC usb_otg_hs_cdc(128, 128, 3);
+
+  STM32USBDeviceOtgHS usb_hs(
+      &hpcd_USB_OTG_HS,
+      256,
+      {usb_otg_hs_ep0_out_buf, usb_otg_hs_ep1_out_buf},
+      {{usb_otg_hs_ep0_in_buf, 8}, {usb_otg_hs_ep1_in_buf, 128}, {usb_otg_hs_ep2_in_buf, 8}},
+      USB::DeviceDescriptor::PacketSize0::SIZE_8,
+      0x483, 0x5740, 0xF407,
+      {&USB_OTG_HS_LANG_PACK},
+      {{&usb_otg_hs_cdc}}
+  );
+  usb_hs.Init();
+  usb_hs.Start();
+
+  static constexpr auto USB_OTG_FS_LANG_PACK = LibXR::USB::DescriptorStrings::MakeLanguagePack(LibXR::USB::DescriptorStrings::Language::EN_US, "XRobot", "STM32 XRUSB USB_OTG_FS CDC Demo", "123456789");
+  LibXR::USB::CDC usb_otg_fs_cdc(128, 128, 3);
+
+  STM32USBDeviceOtgFS usb_fs(
+      &hpcd_USB_OTG_FS,
+      256,
+      {usb_otg_fs_ep0_out_buf, usb_otg_fs_ep1_out_buf},
+      {{usb_otg_fs_ep0_in_buf, 8}, {usb_otg_fs_ep1_in_buf, 128}, {usb_otg_fs_ep2_in_buf, 8}},
+      USB::DeviceDescriptor::PacketSize0::SIZE_8,
+      0x483, 0x5740, 0xF407,
+      {&USB_OTG_FS_LANG_PACK},
+      {{&usb_otg_fs_cdc}}
+  );
+  usb_fs.Init();
+  usb_fs.Start();
+
+  /* Terminal Configuration */
+  STDIO::read_ = usb_otg_fs_cdc.read_port_;
+  STDIO::write_ = usb_otg_fs_cdc.write_port_;
+
   RamFS ramfs("XRobot");
   Terminal<32, 32, 5, 5> terminal(ramfs);
   LibXR::Thread term_thread;
@@ -169,11 +217,14 @@ extern "C" void app_main(void) {
     LibXR::Entry<LibXR::I2C>({i2c3, {"i2c_ist8310"}}),
     LibXR::Entry<LibXR::CAN>({can1, {"can1", "imu_can"}}),
     LibXR::Entry<LibXR::CAN>({can2, {"can2"}}),
-    LibXR::Entry<LibXR::UART>({uart_cdc, {"uart_cdc"}}),
     LibXR::Entry<LibXR::RamFS>({ramfs, {"ramfs"}}),
-    LibXR::Entry<LibXR::Terminal<32, 32, 5, 5>>({terminal, {"terminal"}})
+    LibXR::Entry<LibXR::Terminal<32, 32, 5, 5>>({terminal, {"terminal"}}),
+    LibXR::Entry<LibXR::UART>({usb_otg_fs_cdc, {"usb_otg_fs_cdc"}}),
+    LibXR::Entry<LibXR::UART>({usb_otg_hs_cdc, {"usb_otg_hs_cdc"}})
   };
 
+  // clang-format on
+  // NOLINTEND
   /* User Code Begin 3 */
   STM32Flash flash(FLASH_SECTORS, FLASH_SECTOR_NUMBER);
   LibXR::DatabaseRaw<1> database(flash);

@@ -1,4 +1,4 @@
-terminal_source: usb
+terminal_source: usb_otg_fs_cdc
 software_timer:
   priority: 2
   stack_depth: 2048
@@ -48,7 +48,40 @@ CAN:
   CAN2:
     queue_size: 5
 USB:
-  tx_queue_size: 15
+  usb_otg_fs:
+    enable: true
+    ep0_packet_size: 8
+    tx_buffer_size: 128
+    rx_buffer_size: 128
+    rx_fifo_size: 256
+    tx_fifo_size: 128
+    dma_section: ''
+    cdc_tx_fifo_size: 128
+    cdc_rx_fifo_size: 128
+    cdc_queue_size: 3
+    vid: 1155
+    pid: 22336
+    bcd: 62471
+    manufacturer: XRobot
+    product: STM32 XRUSB USB_OTG_FS CDC Demo
+    serial: '123456789'
+  usb_otg_hs:
+    enable: true
+    ep0_packet_size: 8
+    tx_buffer_size: 128
+    rx_buffer_size: 128
+    rx_fifo_size: 256
+    tx_fifo_size: 128
+    dma_section: ''
+    cdc_tx_fifo_size: 128
+    cdc_rx_fifo_size: 128
+    cdc_queue_size: 3
+    vid: 1155
+    pid: 22336
+    bcd: 62471
+    manufacturer: XRobot
+    product: STM32 XRUSB USB_OTG_HS CDC Demo
+    serial: '123456789'
 Terminal:
   read_buff_size: 32
   max_line_size: 32
@@ -201,10 +234,6 @@ device_aliases:
     type: CAN
     aliases:
     - can2
-  uart_cdc:
-    type: UART
-    aliases:
-    - uart_cdc
   ramfs:
     type: RamFS
     aliases:
@@ -213,6 +242,14 @@ device_aliases:
     type: Terminal<32, 32, 5, 5>
     aliases:
     - terminal
+  usb_otg_fs_cdc:
+    type: UART
+    aliases:
+    - usb_otg_fs_cdc
+  usb_otg_hs_cdc:
+    type: UART
+    aliases:
+    - usb_otg_hs_cdc
 FlashLayout:
   model: STM32F407IGH6
   flash_base: '0x08000000'

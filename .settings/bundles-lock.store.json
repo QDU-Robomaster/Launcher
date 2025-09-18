@@ -90,6 +90,39 @@
       ]
     },
     {
+      "name": "jlink-gdbserver",
+      "version": "8.38.0+st.1",
+      "platform": "darwin",
+      "selected_by": [
+        {
+          "name": "jlink-gdbserver",
+          "version": "^8.38.0+st.1"
+        }
+      ]
+    },
+    {
+      "name": "jlink-gdbserver",
+      "version": "8.38.0+st.1",
+      "platform": "x86_64-linux",
+      "selected_by": [
+        {
+          "name": "jlink-gdbserver",
+          "version": "^8.38.0+st.1"
+        }
+      ]
+    },
+    {
+      "name": "jlink-gdbserver",
+      "version": "8.38.0+st.1",
+      "platform": "x86_64-windows",
+      "selected_by": [
+        {
+          "name": "jlink-gdbserver",
+          "version": "^8.38.0+st.1"
+        }
+      ]
+    },
+    {
       "name": "ninja",
       "version": "1.12.1+st.9",
       "platform": "darwin",
@@ -124,12 +157,12 @@
     },
     {
       "name": "st-arm-clang",
-      "version": "19.1.6+st.8",
+      "version": "19.1.6+st.9",
       "platform": "aarch64-darwin",
       "selected_by": [
         {
           "name": "st-arm-clang",
-          "version": "19.1.6+st.8"
+          "version": "19.1.6+st.9"
         },
         {
           "name": "st-arm-clang",
@@ -139,12 +172,12 @@
     },
     {
       "name": "st-arm-clang",
-      "version": "19.1.6+st.8",
+      "version": "19.1.6+st.9",
       "platform": "x86_64-darwin",
       "selected_by": [
         {
           "name": "st-arm-clang",
-          "version": "19.1.6+st.8"
+          "version": "19.1.6+st.9"
         },
         {
           "name": "st-arm-clang",
@@ -154,12 +187,12 @@
     },
     {
       "name": "st-arm-clang",
-      "version": "19.1.6+st.8",
+      "version": "19.1.6+st.9",
       "platform": "x86_64-linux",
       "selected_by": [
         {
           "name": "st-arm-clang",
-          "version": "19.1.6+st.8"
+          "version": "19.1.6+st.9"
         },
         {
           "name": "st-arm-clang",
@@ -169,12 +202,12 @@
     },
     {
       "name": "st-arm-clang",
-      "version": "19.1.6+st.8",
+      "version": "19.1.6+st.9",
       "platform": "x86_64-windows",
       "selected_by": [
         {
           "name": "st-arm-clang",
-          "version": "19.1.6+st.8"
+          "version": "19.1.6+st.9"
         },
         {
           "name": "st-arm-clang",
@@ -187,6 +220,10 @@
       "version": "0.0.4+st.1",
       "platform": "all",
       "selected_by": [
+        {
+          "name": "st-arm-clang-19_1_6-description",
+          "version": "0.0.4+st.1"
+        },
         {
           "name": "st-arm-clang-19_1_6-description",
           "version": ">=0.0.1"
