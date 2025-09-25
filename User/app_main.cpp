@@ -1,6 +1,6 @@
 #include "app_main.h"
 
-#include "cdc.hpp"
+#include "cdc_uart.hpp"
 #include "libxr.hpp"
 #include "main.h"
 #include "stm32_adc.hpp"
@@ -65,12 +65,12 @@ static uint8_t usb_otg_hs_ep0_in_buf[8];
 static uint8_t usb_otg_hs_ep0_out_buf[8];
 static uint8_t usb_otg_hs_ep1_in_buf[128];
 static uint8_t usb_otg_hs_ep1_out_buf[128];
-static uint8_t usb_otg_hs_ep2_in_buf[8];
+static uint8_t usb_otg_hs_ep2_in_buf[16];
 static uint8_t usb_otg_fs_ep0_in_buf[8];
 static uint8_t usb_otg_fs_ep0_out_buf[8];
 static uint8_t usb_otg_fs_ep1_in_buf[128];
 static uint8_t usb_otg_fs_ep1_out_buf[128];
-static uint8_t usb_otg_fs_ep2_in_buf[8];
+static uint8_t usb_otg_fs_ep2_in_buf[16];
 
 extern "C" void app_main(void) {
   // clang-format on
@@ -140,13 +140,13 @@ extern "C" void app_main(void) {
   STM32CAN can2(&hcan2, 5);
 
   static constexpr auto USB_OTG_HS_LANG_PACK = LibXR::USB::DescriptorStrings::MakeLanguagePack(LibXR::USB::DescriptorStrings::Language::EN_US, "XRobot", "STM32 XRUSB USB_OTG_HS CDC Demo", "123456789");
-  LibXR::USB::CDC usb_otg_hs_cdc(128, 128, 3);
+  LibXR::USB::CDCUart usb_otg_hs_cdc(128, 128, 3);
 
   STM32USBDeviceOtgHS usb_hs(
       &hpcd_USB_OTG_HS,
       256,
       {usb_otg_hs_ep0_out_buf, usb_otg_hs_ep1_out_buf},
-      {{usb_otg_hs_ep0_in_buf, 8}, {usb_otg_hs_ep1_in_buf, 128}, {usb_otg_hs_ep2_in_buf, 8}},
+      {{usb_otg_hs_ep0_in_buf, 8}, {usb_otg_hs_ep1_in_buf, 128}, {usb_otg_hs_ep2_in_buf, 16}},
       USB::DeviceDescriptor::PacketSize0::SIZE_8,
       0x483, 0x5740, 0xF407,
       {&USB_OTG_HS_LANG_PACK},
@@ -156,13 +156,13 @@ extern "C" void app_main(void) {
   usb_hs.Start();
 
   static constexpr auto USB_OTG_FS_LANG_PACK = LibXR::USB::DescriptorStrings::MakeLanguagePack(LibXR::USB::DescriptorStrings::Language::EN_US, "XRobot", "STM32 XRUSB USB_OTG_FS CDC Demo", "123456789");
-  LibXR::USB::CDC usb_otg_fs_cdc(128, 128, 3);
+  LibXR::USB::CDCUart usb_otg_fs_cdc(128, 128, 3);
 
   STM32USBDeviceOtgFS usb_fs(
       &hpcd_USB_OTG_FS,
       256,
       {usb_otg_fs_ep0_out_buf, usb_otg_fs_ep1_out_buf},
-      {{usb_otg_fs_ep0_in_buf, 8}, {usb_otg_fs_ep1_in_buf, 128}, {usb_otg_fs_ep2_in_buf, 8}},
+      {{usb_otg_fs_ep0_in_buf, 8}, {usb_otg_fs_ep1_in_buf, 128}, {usb_otg_fs_ep2_in_buf, 16}},
       USB::DeviceDescriptor::PacketSize0::SIZE_8,
       0x483, 0x5740, 0xF407,
       {&USB_OTG_FS_LANG_PACK},
