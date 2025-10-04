@@ -82,6 +82,10 @@ USB:
     manufacturer: XRobot
     product: STM32 XRUSB USB_OTG_HS CDC Demo
     serial: '123456789'
+  usb_device:
+    enable: false
+  usb_fs:
+    enable: false
 Terminal:
   read_buff_size: 32
   max_line_size: 32

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="VcsDirectoryMappings">
+    <mapping directory="" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Middlewares/Third_Party/LibXR" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Modules/BMI088" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Modules/BlinkLED" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Modules/BuzzerAlarm" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Modules/CMD" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Modules/DR16" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Modules/IST8310" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Modules/MadgwickAHRS" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Modules/RMMotorContainer" vcs="Git" />
+  </component>
+</project>

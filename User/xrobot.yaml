@@ -41,6 +41,52 @@ modules:
 - id: buzzer_alarm
   name: BuzzerAlarm
   constructor_args:
-    alarm_freq: 1500
-    alarm_duration: 300
-    alarm_delay: 300
+    alarm_delay: 5000
+- id: rmmotor_container
+  name: RMMotorContainer
+  constructor_args:
+    motor0:
+      model: RMMotorContainer::Model::MOTOR_NONE
+      reverse: false
+    motor1:
+      model: RMMotorContainer::Model::MOTOR_NONE
+      reverse: false
+    motor2:
+      model: RMMotorContainer::Model::MOTOR_M3508
+      reverse: false
+    motor3:
+      model: RMMotorContainer::Model::MOTOR_NONE
+      reverse: false
+    motor4:
+      model: RMMotorContainer::Model::MOTOR_NONE
+      reverse: false
+    motor5:
+      model: RMMotorContainer::Model::MOTOR_NONE
+      reverse: false
+    motor6:
+      model: RMMotorContainer::Model::MOTOR_NONE
+      reverse: false
+    motor7:
+      model: RMMotorContainer::Model::MOTOR_NONE
+      reverse: false
+    motor8:
+      model: RMMotorContainer::Model::MOTOR_NONE
+      reverse: false
+    motor9:
+      model: RMMotorContainer::Model::MOTOR_NONE
+      reverse: false
+    motor10:
+      model: RMMotorContainer::Model::MOTOR_NONE
+      reverse: false
+- id: cmd
+  name: CMD
+  constructor_args:
+    mode: CMD::Mode::CMD_OP_CTRL
+    chassis_cmd_topic_name: chassis_cmd
+    gimbal_cmd_topic_name: gimbal_cmd
+- id: dr16
+  name: DR16
+  constructor_args:
+    cmd: '@cmd'
+    task_stack_depth_uart: 2048
+    cmd_data_tp_name: cmd_raw_data_
