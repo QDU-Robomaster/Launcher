@@ -8,3 +8,5 @@ modules:
   - qdu-future/CMD
   - qdu-future/DR16
   - qdu-future/Motor
+  - qdu-future/Chassis
+  - qdu-future/Gimbal
