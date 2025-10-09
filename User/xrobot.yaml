@@ -92,3 +92,72 @@ modules:
   template_args:
     ChassisType: Omni<RMMotorContainer>
     MotorType: RMMotorContainer
+- id: gimbal
+  name: Gimbal
+  constructor_args:
+    cmd: '@cmd'
+    task_stack_depth: 2048
+    pid_angle_param_yaw:
+      k: 1.0
+      p: 0.0
+      i: 0.0
+      d: 0.0
+      i_limit: 0.0
+      out_limit: 0.0
+      cycle: false
+    pid_angle_param_pitch:
+      k: 1.0
+      p: 0.0
+      i: 0.0
+      d: 0.0
+      i_limit: 0.0
+      out_limit: 0.0
+      cycle: false
+    pid_omega_param_yaw:
+      k: 1.0
+      p: 0.0
+      i: 0.0
+      d: 0.0
+      i_limit: 0.0
+      out_limit: 0.0
+      cycle: false
+    pid_omega_param_pitch:
+      k: 1.0
+      p: 0.0
+      i: 0.0
+      d: 0.0
+      i_limit: 0.0
+      out_limit: 0.0
+      cycle: false
+    motor_can1: '@motor_can1'
+    motor_can2: '@motor_can2'
+    gimbal_pitch_center: 0.0
+    gimbal_yaw_center: 0.0
+    gimbal_max: 0.0
+    gimbal_min: 0.0
+    gimbal_pitch_mass: 0.0
+    radius_pitch_to_center_of_mass:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    radius_yaw_to_pitch:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    rotation_pitch_from_imu:
+      m:
+      - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    gimbal_cmd_topic_name: gimbal_cmd
+    accl_topic_name: bmi088_accl
+    euler_topic_name: ahrs_euler
+    gyro_topic_name: bmi088_gyro
+  template_args:
+    MotorType: RMMotorContainer
