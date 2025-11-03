@@ -38,6 +38,8 @@ required_hardware:
   - motor_can1
   - motor_can2
 depends:
+  - qdu-future/CMD
+  - qdu-future/Motor
 
 === END MANIFEST === */
 // clang-format on
