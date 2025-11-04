@@ -112,15 +112,14 @@ class Launcher : public LibXR::Application {
       launcher->semaphore_.Post();
       launcher->Control();
       launcher->SelfResolution();
-
+      
       // event_active 接受dr16 mode转变
     }
   }
 
   void Update() {
-    motor_can1_.Update(5);
-    motor_can2_.Update(2);
-    motor_can2_.Update(3);
+    motor_can1_.Update();
+    motor_can2_.Update();
   }
 
   void SelfResolution() {
