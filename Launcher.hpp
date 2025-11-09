@@ -51,10 +51,25 @@ depends:
 #include "libxr_def.hpp"
 #include "libxr_time.hpp"
 #include "pid.hpp"
+#include "stm32f4xx.h"
 #define LAUNCHER_TRIG_SPEED_MAX (16000.0f)
 
 template <typename MotorType>
 class Launcher : public LibXR::Application {
+  enum class MOD : uint8_t {
+    SAFE = 0,
+    SINGLE,
+    BREAK_OUT,
+    AIM,
+  };
+
+  enum class STATE : uint8_t { RESET = 0, FIRE, STOP, JAM };
+
+  typedef struct {
+    float heat_limit;
+    float heat_dissipation;
+  } RefereeData;
+
  public:
   /**
    * @brief Launcher 构造函数
@@ -96,63 +111,66 @@ class Launcher : public LibXR::Application {
     UNUSED(app);
     thread_.Create(this, ThreadFunction, "LauncherThread", task_stack_depth,
                    LibXR::Thread::Priority::MEDIUM);
-
-    // Hardware initialization example:
-    // auto dev = hw.template Find<LibXR::GPIO>("led");
   }
 
   static void ThreadFunction(Launcher *launcher) {
-    auto now = LibXR::Timebase::GetMilliseconds();
-    launcher->dt_ = (now - launcher->last_online_time_).ToSecondf();
-    launcher->last_online_time_ = now;
-
     while (1) {
-      launcher->semaphore_.Wait(UINT32_MAX);
       launcher->Update();
-      launcher->semaphore_.Post();
-      launcher->Control();
-      launcher->SelfResolution();
-      
-      // event_active 接受dr16 mode转变
     }
   }
-
+  /**
+   * @brief 更新函数
+   *
+   */
   void Update() {
+    auto now = LibXR::Timebase::GetMilliseconds();
+    dt_ = (now - last_online_time_).ToSecondf();
+    last_online_time_ = now;
+
+    referee_data_.heat_limit = 260.0f;
+    referee_data_.heat_dissipation = 20.0f;
+
     motor_can1_.Update();
     motor_can2_.Update();
   }
 
-  void SelfResolution() {
-    prev_omega_fric_ = now_omega_fric_;
-    prev_omega_trig1_ = now_omega_trig1_;
-    prev_omega_trig2_ = now_omega_trig2_;
+  void ModeSelection(float default_bullet_speed_,bool is17mm) {
+    switch (mod_) {
+      case MOD::SAFE:
+      now_mod_ = MOD::SAFE;
+        break;
+      case MOD::SINGLE:
+      now_mod_ = MOD::SINGLE;
+        break;
+      case MOD::BREAK_OUT:
+      case MOD::AIM:
+      now_mod_ = MOD::BREAK_OUT;
+        break;
+      default:
+        break;
+    }
 
-    now_angle_trig_ = motor_can1_.GetAngle(5);
-    now_angle_fric1_ = motor_can2_.GetAngle(2);
-    now_angle_fric2_ = motor_can2_.GetAngle(3);
-    now_omega_fric_ = motor_can1_.GetSpeed(5);
-    now_omega_trig1_ = motor_can2_.GetSpeed(2);
-    now_angle_fric2_ = motor_can2_.GetSpeed(3);
+    last_mod_ = now_mod_;
+    if (last_mod_ == MOD::SAFE && now_mod_ == MOD::SINGLE) {
+        fric_rpm_ = BulletSpeedToFricRpm(default_bullet_speed_, is17mm);
+        target_trig_angle_ = (M_2PI / num_trig_tooth_ + last_trig_angle_);
+        target_trig_rpm_ = 0.0f;
+        last_trig_angle_ = target_trig_angle_;
+    }else if(last_mod_ == MOD::SAFE && now_mod_ == MOD::BREAK_OUT){
+        fric_rpm_ = BulletSpeedToFricRpm(default_bullet_speed_, is17mm);
+        target_trig_rpm_ = 0.0f;
+        target_trig_angle_ = 0.0f;
+    }
   }
 
-  void Control() {
-    const float OUTPUT_TRIG = std::clamp(
-        pid_trig_.Calculate(target_angle_trig_,
-                            now_angle_trig_ / LAUNCHER_TRIG_SPEED_MAX, dt_),
-        0.0f, LAUNCHER_TRIG_SPEED_MAX);
+  void SelfResolution() {}
 
-    float output_fric1 = BulletSpeedToFricRpm(0, fric_radius_, 1);
-    float output_fric2 = -output_fric1;
+  void BehavioralJudgment() {}
 
-    motor_can1_.SetCurrent(5, OUTPUT_TRIG);
-    motor_can2_.SetCurrent(2, output_fric1);
-    motor_can2_.SetCurrent(3, output_fric2);
-  }
+  void OutputToDynamics() {}
 
-  float BulletSpeedToFricRpm(float bullet_speed, float fric_radius,
+  float BulletSpeedToFricRpm(float bullet_speed,
                              bool is17mm) {
-    UNUSED(fric_radius);
-
     if (bullet_speed == 0.0f) {
       return 0.0f;
     } else if (bullet_speed > 0.0f) {
@@ -177,7 +195,6 @@ class Launcher : public LibXR::Application {
     }
     return 0.0f;
   }
-
   /**
    * @brief 监控函数 (在此应用中未使用)
    *
@@ -185,6 +202,12 @@ class Launcher : public LibXR::Application {
   void OnMonitor() override {}
 
  private:
+  RefereeData referee_data_;
+  MOD mod_ = MOD::SAFE;
+  STATE state_ = STATE::STOP;
+
+  uint8_t now_mod_ = 0;
+  uint8_t last_mod_ = 0;
   // 最小发射间隔
   uint32_t min_launch_delay_ = 0.0f;
   // 默认弹丸初速度
@@ -196,21 +219,14 @@ class Launcher : public LibXR::Application {
   // 拨弹盘中一圈能存储几颗弹丸
   float num_trig_tooth_ = 0.0f;
 
-  float now_angle_trig_ = 0.0f;
-  float now_angle_fric1_ = 0.0f;
-  float now_angle_fric2_ = 0.0f;
+  float calorie_remain_ = 0.0f;
 
-  float prev_omega_fric_ = 0.0f;
-  float prev_omega_trig1_ = 0.0f;
-  float prev_omega_trig2_ = 0.0f;
-
-  float now_omega_fric_ = 0.0f;
-  float now_omega_trig1_ = 0.0f;
-  float now_omega_trig2_ = 0.0f;
-
-  float target_angle_trig_ = M_2PI / num_trig_tooth_;
-
+  float target_trig_angle_ = 0.0f;
+  float target_trig_rpm_ = 0.0f;
+  float last_trig_angle_ = 0.0f;
   float fric_rpm_ = 0.0f;
+
+  bool is_reset_ = false;
 
   Motor<MotorType> &motor_can2_;
 
