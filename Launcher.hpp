@@ -45,13 +45,9 @@ depends:
 #include <cstdint>
 
 #include "CMD.hpp"
-#include "Eigen/Core"
 #include "Motor.hpp"
 #include "app_framework.hpp"
-#include "libxr_def.hpp"
-#include "libxr_time.hpp"
 #include "pid.hpp"
-#include "stm32f4xx.h"
 #define LAUNCHER_TRIG_SPEED_MAX (16000.0f)
 
 template <typename MotorType>
