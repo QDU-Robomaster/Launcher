@@ -22,8 +22,9 @@ constructor_args:
       i_limit: 0.0
       out_limit: 0.0
       cycle: false
-  - motor_can1: '@motor_can1'
-  - motor_can2: '@motor_can2'
+  - motor_can1: '@motor_can2.GetMotor(7)'
+  - motor_fric_1_: '@motor_can2.GetMotor(6)'
+  - motor_trig: '@motor_can1.GetMotor(6)'
   - num_trig_tooth: 0.0
   - trig_gear_ratio: 0.0
   - fric_radius: 0.0
