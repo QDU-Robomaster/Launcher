@@ -30,7 +30,7 @@ constructor_args:
       default_bullet_speed: 0.0
       fric_radius: 0.0
       trig_gear_ratio: 0.0
-      num_trig_tooth: 0.0
+      num_trig_tooth: 0
 template_args:
   - MotorType: RMMotorContainer
 required_hardware:
