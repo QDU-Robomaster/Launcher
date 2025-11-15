@@ -50,6 +50,7 @@ depends:
 #include "Motor.hpp"
 #include "app_framework.hpp"
 #include "pid.hpp"
+#include "thread.hpp"
 #define LAUNCHER_TRIG_SPEED_MAX (16000.0f)
 
 template <typename MotorType>
@@ -118,8 +119,10 @@ class Launcher : public LibXR::Application {
   }
 
   static void ThreadFunction(Launcher *launcher) {
+    auto last_time = LibXR::Timebase::GetMilliseconds();
     while (1) {
       launcher->Update();
+      LibXR::Thread ::SleepUntil(last_time, 2);
     }
   }
   /**
