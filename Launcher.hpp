@@ -47,7 +47,7 @@ depends:
 #include <cstdint>
 
 #include "CMD.hpp"
-#include "Motor.hpp"
+#include "RMMotor.hpp"
 #include "app_framework.hpp"
 #include "pid.hpp"
 #include "thread.hpp"
