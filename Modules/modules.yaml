@@ -12,5 +12,6 @@ modules:
   - qdu-future/RMMotor
   - qdu-future/Chassis
   - qdu-future/Gimbal
+  - qdu-future/Launcher
   - qdu-future/Launcher@master
   - qdu-future/EventBinder@master
