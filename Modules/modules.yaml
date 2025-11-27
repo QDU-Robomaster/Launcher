@@ -6,13 +6,15 @@ modules:
   - xrobot-org/IST8310
   - xrobot-org/SharedTopic
   - xrobot-org/SharedTopicClient
-  - qdu-future/BMI088
-  - qdu-future/CMD
+  - qdu-future/BMI088@master
+  - qdu-future/CMD@master
   - qdu-future/DR16
   - qdu-future/RMMotor
+  - qdu-future/DMMotor
   - qdu-future/Chassis
   - qdu-future/Gimbal
   - qdu-future/Launcher
-  - qdu-future/Launcher@master
-  - qdu-future/EventBinder@master
-  - qdu-future/HostData@master
+  - qdu-future/EventBinder
+  - qdu-future/HostData
+  - qdu-future/AtomImuCan
+  - qdu-future/LegVmc
