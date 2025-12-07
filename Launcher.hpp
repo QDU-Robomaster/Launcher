@@ -21,7 +21,15 @@ constructor_args:
       i_limit: 0.0
       out_limit: 0.0
       cycle: false
-  - pid_param_fric:
+  - pid_param_fric_0:
+      k: 1.0
+      p: 0.0
+      i: 0.0
+      d: 0.0
+      i_limit: 0.0
+      out_limit: 0.0
+      cycle: false
+  - pid_param_fric_1:
       k: 1.0
       p: 0.0
       i: 0.0
