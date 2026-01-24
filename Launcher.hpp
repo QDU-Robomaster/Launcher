@@ -60,18 +60,15 @@ depends:
 
 #include <cmath>
 #include <cstdint>
-#include <deque>
 
 #include "CMD.hpp"
 #include "RMMotor.hpp"
 #include "app_framework.hpp"
-#include "cmsis_gcc.h"
 #include "cycle_value.hpp"
 #include "event.hpp"
 #include "libxr_cb.hpp"
 #include "libxr_def.hpp"
 #include "libxr_time.hpp"
-#include "lockfree_queue.hpp"
 #include "message.hpp"
 #include "mutex.hpp"
 #include "pid.hpp"
@@ -193,23 +190,10 @@ class Launcher : public LibXR::Application {
 
     tp_cmd_launcher.RegisterCallback(launcher_cmd_callback);
 
-    cmd_->GetEvent().Register(CMD::CMD_EVENT_LOST_CTRL, lost_ctrl_callback);
   }
 
   static void ThreadFunction(Launcher *launcher) {
     while (1) {
-      // control和heat同步进行，共用一个时间
-      launcher->now_ = LibXR::Timebase::GetMilliseconds();
-      // 防止第一次now过大,dt_不可控
-      if (launcher->start_) {
-        launcher->dt_ =
-            (launcher->now_ - launcher->last_online_time_).ToSecondf();
-      } else {
-        launcher->dt_ = 0.02;
-        launcher->start_ = true;
-      }
-      launcher->last_online_time_ = launcher->now_;
-
       launcher->mutex_.Lock();
       launcher->Update();
       launcher->TrigModeSelection();
@@ -283,8 +267,12 @@ class Launcher : public LibXR::Application {
     last_online_time_ = now;
 
     switch (fric_mod_) {
+      case FRICMODE::RELAX:
+      motor_fric_0_->CurrentControl(0);
+      motor_fric_1_->CurrentControl(0);
+      break;
       case FRICMODE::SAFE:
-        FricRPMControl(PARAM.fric_rpm_);
+        FricRPMControl(0);
         break;
       case FRICMODE::READY:
         FricRPMControl(PARAM.fric_rpm_);
