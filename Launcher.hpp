@@ -544,7 +544,7 @@ class Launcher : public LibXR::Application {
     bool success = (shot_.fric_drop_max > launcher::param::MIN_FRICDROP) &&
                    (motor_trig_->GetOmega() >
                     0.88 * M_2PI * trig_freq_ / param_.num_trig_tooth);
-
+                    
     shot_.active = false;
     if (success) {
       heat_limit_.launched_num++;
