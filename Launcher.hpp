@@ -5,9 +5,10 @@
 module_description: No description provided
 constructor_args:
   - task_stack_depth: 2048
+  - cmd: '@&cmd'
   - pid_param_trig_angle:
       k: 1.0
-      p: 0.0
+      p: 20.0
       i: 0.0
       d: 0.0
       i_limit: 0.0
@@ -15,7 +16,7 @@ constructor_args:
       cycle: false
   - pid_param_trig_speed:
       k: 1.0
-      p: 0.0
+      p: 0.2
       i: 0.0
       d: 0.0
       i_limit: 0.0
@@ -23,7 +24,7 @@ constructor_args:
       cycle: false
   - pid_param_fric_0:
       k: 1.0
-      p: 0.0
+      p: 0.000002
       i: 0.0
       d: 0.0
       i_limit: 0.0
@@ -31,7 +32,7 @@ constructor_args:
       cycle: false
   - pid_param_fric_1:
       k: 1.0
-      p: 0.0
+      p: 0.000002
       i: 0.0
       d: 0.0
       i_limit: 0.0
@@ -41,11 +42,12 @@ constructor_args:
   - motor_fric_1: '@&motor_fric_1'
   - motor_trig: '@&motor_trig'
   - launcher_param:
-      default_bullet_speed: 0.0
-      fric_radius: 0.0
-      trig_gear_ratio: 0.0
-      num_trig_tooth: 0
-      trig_freq_: 0.0
+      default_bullet_speed: 10.0
+      fric_radius: 0.03
+      trig_gear_ratio: 36.0
+      num_trig_tooth: 10
+      expect_trig_freq_: 15
+      fric_rpm_: 3000
 template_args:
 required_hardware:
   - dr16
@@ -67,6 +69,7 @@ depends:
 #include "libxr_cb.hpp"
 #include "libxr_def.hpp"
 #include "libxr_time.hpp"
+#include "message.hpp"
 #include "mutex.hpp"
 #include "pid.hpp"
 #include "thread.hpp"
@@ -75,37 +78,39 @@ depends:
 
 class Launcher : public LibXR::Application {
  public:
-  enum class TRIGMODE : uint8_t {
-    SAFE = 0,
-    SINGLE,
-    CONTINUE,
-    AIM,
+  enum class LauncherState {
+    STOP,
+    NORMAL,
+    JAMMED,
+    OVERHEAT,
   };
+  enum class TRIGMODE : uint8_t { RELAX, SAFE, SINGLE, CONTINUE, JAM };
 
   enum class FRICMODE : uint8_t {
-    SAFE = 0,
+    RELAX,
+    SAFE,
     READY,
   };
-
-  enum class STATE : uint8_t { RESET = 0, FIRE, STOP, JAM };
 
   typedef struct {
     float heat_limit;
     float heat_cooling;
   } RefereeData;
-  struct LauncherParam {
-    /*默认弹速*/
+  typedef struct {
     float default_bullet_speed;
-    /*摩擦轮半径*/
     float fric_radius;
-    /*拨弹盘电机减速比*/
     float trig_gear_ratio;
-    /*拨齿数目*/
     uint8_t num_trig_tooth;
-    /*弹频*/
     float trig_freq_;
-  };
-
+    float fric_rpm_;
+  } LauncherParam;
+  typedef struct {
+    float single_heat;  // 单发热量
+    float launched_num;
+    float current_heat;
+    float heat_threshold;  // 热量限制阈值
+    bool allow_fire;
+  } HeatLimit;
   /**
    * @brief Launcher 构造函数
    *
@@ -125,21 +130,22 @@ class Launcher : public LibXR::Application {
    */
 
   Launcher(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
-           uint32_t task_stack_depth,
+           uint32_t task_stack_depth, CMD *cmd,
            LibXR::PID<float>::Param pid_param_trig_angle,
            LibXR::PID<float>::Param pid_param_trig_speed,
            LibXR::PID<float>::Param pid_param_fric_0,
-           LibXR::PID<float>::Param pid_param_fric_1,RMMotor *motor_fric_0,
+           LibXR::PID<float>::Param pid_param_fric_1, RMMotor *motor_fric_0,
            RMMotor *motor_fric_1, RMMotor *motor_trig,
-           LauncherParam launch_param)
-      : PARAM(launch_param),
+           LauncherParam launcher_param)
+      : PARAM(launcher_param),
         motor_fric_0_(motor_fric_0),
         motor_fric_1_(motor_fric_1),
         motor_trig_(motor_trig),
         pid_fric_0_(pid_param_fric_0),
         pid_fric_1_(pid_param_fric_1),
         pid_trig_sp_(pid_param_trig_speed),
-        pid_trig_angle_(pid_param_trig_angle) {
+        pid_trig_angle_(pid_param_trig_angle),
+        cmd_(cmd) {
     UNUSED(hw);
     UNUSED(app);
     thread_.Create(this, ThreadFunction, "LauncherThread", task_stack_depth,
@@ -150,6 +156,16 @@ class Launcher : public LibXR::Application {
     } else {
       min_launch_delay_ = 0.0f;
     }
+    auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
+        [](bool in_isr, Launcher *launcher, uint32_t event_id) {
+          UNUSED(in_isr);
+          UNUSED(event_id);
+          launcher->SetMode(static_cast<uint32_t>(FRICMODE::RELAX));
+          launcher->trig_mod_ = TRIGMODE::RELAX;
+        },
+        this);
+
+    cmd_->GetEvent().Register(CMD::CMD_EVENT_LOST_CTRL, lost_ctrl_callback);
 
     auto callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, Launcher *launcher, uint32_t event_id) {
@@ -157,20 +173,28 @@ class Launcher : public LibXR::Application {
           launcher->SetMode(event_id);
         },
         this);
+    launcher_event_.Register(static_cast<uint32_t>(FRICMODE::RELAX), callback);
     launcher_event_.Register(static_cast<uint32_t>(FRICMODE::SAFE), callback);
     launcher_event_.Register(static_cast<uint32_t>(FRICMODE::READY), callback);
+    auto launcher_cmd_callback = LibXR::Callback<LibXR::RawData &>::Create(
+        [](bool in_isr, Launcher *Launcher, LibXR::RawData &raw_data) {
+          UNUSED(in_isr);
+          CMD::LauncherCMD cmd_lau =
+              *reinterpret_cast<CMD::LauncherCMD *>(raw_data.addr_);
+          Launcher->launcher_cmd_.isfire = cmd_lau.isfire;
+        },
+        this);
+
+    auto tp_cmd_launcher =
+        LibXR::Topic(LibXR::Topic::Find("launcher_cmd", nullptr));
+
+    tp_cmd_launcher.RegisterCallback(launcher_cmd_callback);
+
   }
 
   static void ThreadFunction(Launcher *launcher) {
-    LibXR::Topic::ASyncSubscriber<CMD::LauncherCMD> launcher_cmd_tp(
-        "launcher_cmd");
-    launcher_cmd_tp.StartWaiting();
     while (1) {
       launcher->mutex_.Lock();
-      if (launcher_cmd_tp.Available()) {
-        launcher->launcher_cmd_ = launcher_cmd_tp.GetData();
-        launcher_cmd_tp.StartWaiting();
-      }
       launcher->Update();
       launcher->TrigModeSelection();
       launcher->CaclTarget();
@@ -202,11 +226,9 @@ class Launcher : public LibXR::Application {
       return;
     }
 
-    float last_angle = last_motor_angle;
-    float current_angle = current_motor_angle;
+    float delta_trig_angle = LibXR::CycleValue<float>(current_motor_angle) -
+                             LibXR::CycleValue<float>(last_motor_angle);
 
-    float delta_trig_angle = LibXR::CycleValue<float>(current_angle) -
-                             LibXR::CycleValue<float>(last_angle);
     if (!motor_trig_->GetReverse()) {
       trig_angle_ += delta_trig_angle / PARAM.trig_gear_ratio;
     } else {
@@ -245,13 +267,15 @@ class Launcher : public LibXR::Application {
     last_online_time_ = now;
 
     switch (fric_mod_) {
+      case FRICMODE::RELAX:
+      motor_fric_0_->CurrentControl(0);
+      motor_fric_1_->CurrentControl(0);
+      break;
       case FRICMODE::SAFE:
-        fric_rpm_ = 0.0f;
-        FricRPMControl(fric_rpm_);
+        FricRPMControl(0);
         break;
       case FRICMODE::READY:
-        fric_rpm_ = 3000.0f;
-        FricRPMControl(fric_rpm_);
+        FricRPMControl(PARAM.fric_rpm_);
         break;
       default:
         break;
@@ -260,8 +284,8 @@ class Launcher : public LibXR::Application {
     static TRIGMODE last_trig_mod = TRIGMODE::SAFE;
 
     if (last_trig_mod == TRIGMODE::SAFE && trig_mod_ == TRIGMODE::SINGLE) {
-        target_trig_angle_ = static_cast<float>(
-            M_2PI / PARAM.num_trig_tooth + trig_angle_);
+      target_trig_angle_ =
+          static_cast<float>(M_2PI / PARAM.num_trig_tooth + trig_angle_);
     }
 
     switch (trig_mod_) {
@@ -272,7 +296,7 @@ class Launcher : public LibXR::Application {
       case TRIGMODE::SINGLE: {
         TrigAngleControl(target_trig_angle_);
 
-          float angle_err = static_cast<float>(target_trig_angle_ - trig_angle_);
+        float angle_err = static_cast<float>(target_trig_angle_ - trig_angle_);
         if (std::fabs(angle_err) == 0.0f) {
           trig_mod_ = TRIGMODE::SAFE;
         }
@@ -283,8 +307,8 @@ class Launcher : public LibXR::Application {
         if (PARAM.trig_freq_ > 0.0f) {
           float trig_speed = 1.0f / PARAM.trig_freq_;
           if (since_last >= trig_speed) {
-              target_trig_angle_ += static_cast<float>(
-                  M_2PI / PARAM.num_trig_tooth);
+            target_trig_angle_ +=
+                static_cast<float>(M_2PI / PARAM.num_trig_tooth);
             last_trig_time_ = now;
           }
         }
@@ -312,9 +336,9 @@ class Launcher : public LibXR::Application {
   TRIGMODE trig_mod_ = TRIGMODE::SAFE;
   FRICMODE fric_mod_ = FRICMODE::SAFE;
 
-  float target_trig_angle_ = 0.0f;
-  float trig_angle_ = 0.0f;
-  float fric_rpm_ = 0.0f;
+  LibXR::CycleValue<float> target_trig_angle_ = 0.0f;
+  LibXR::CycleValue<float> trig_angle_ = 0.0f;
+  LibXR::CycleValue<float> last_trig_angle_ = 0.0f;
   float min_launch_delay_ = 0.0f;
   LibXR::MillisecondTimestamp last_trig_time_ = 0;
 
@@ -329,7 +353,9 @@ class Launcher : public LibXR::Application {
 
   CMD::LauncherCMD launcher_cmd_;
 
+  CMD *cmd_;
   float dt_ = 0;
+  LibXR::MillisecondTimestamp now_ = 0.0f;
   LibXR::MillisecondTimestamp last_online_time_ = 0;
 
   bool last_fire_notify_ = false;
@@ -340,10 +366,11 @@ class Launcher : public LibXR::Application {
   LibXR::Semaphore semaphore_;
   LibXR::Mutex mutex_;
   LibXR::Event launcher_event_;
-
+  bool start_= false;
   /*---------------------工具函数--------------------------------------------------*/
   void FricRPMControl(float output) {
-    float out_left = pid_fric_0_.Calculate(output, motor_fric_0_->GetRPM(), dt_);
+    float out_left =
+        pid_fric_0_.Calculate(output, motor_fric_0_->GetRPM(), dt_);
     float out_right =
         pid_fric_1_.Calculate(output, motor_fric_1_->GetRPM(), dt_);
     motor_fric_0_->CurrentControl(out_left);
@@ -353,11 +380,11 @@ class Launcher : public LibXR::Application {
   void TrigAngleControl(float target_angle) {
     float plate_omega_ref = pid_trig_angle_.Calculate(
         target_angle, trig_angle_,
-        motor_trig_->GetOmega() / PARAM.trig_gear_ratio,dt_);
+        motor_trig_->GetOmega() / PARAM.trig_gear_ratio, dt_);
 
     float motor_omega_ref = plate_omega_ref;
-    float out =
-      pid_trig_sp_.Calculate(motor_omega_ref, motor_trig_->GetOmega()/PARAM.trig_gear_ratio, dt_);
+    float out = pid_trig_sp_.Calculate(
+        motor_omega_ref, motor_trig_->GetOmega() / PARAM.trig_gear_ratio, dt_);
 
     motor_trig_->CurrentControl(out);
   }
