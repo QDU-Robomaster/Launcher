@@ -60,6 +60,7 @@ depends:
 
 #include <cmath>
 #include <cstdint>
+#include <deque>
 
 #include "CMD.hpp"
 #include "RMMotor.hpp"
@@ -69,6 +70,7 @@ depends:
 #include "libxr_cb.hpp"
 #include "libxr_def.hpp"
 #include "libxr_time.hpp"
+#include "lockfree_queue.hpp"
 #include "message.hpp"
 #include "mutex.hpp"
 #include "pid.hpp"
@@ -76,6 +78,7 @@ depends:
 #include "timebase.hpp"
 #include "timer.hpp"
 #define TrigStep static_cast<float>(M_2PI / PARAM.num_trig_tooth)
+#define MinFricRpm 3500
 #define jam_current 10
 class Launcher : public LibXR::Application {
  public:
@@ -102,7 +105,7 @@ class Launcher : public LibXR::Application {
     float fric_radius;
     float trig_gear_ratio;
     uint8_t num_trig_tooth;
-    float trig_freq_;
+    float expect_trig_freq_;
     float fric_rpm_;
   } LauncherParam;
   typedef struct {
@@ -152,8 +155,8 @@ class Launcher : public LibXR::Application {
     thread_.Create(this, ThreadFunction, "LauncherThread", task_stack_depth,
                    LibXR::Thread::Priority::MEDIUM);
 
-    if (PARAM.trig_freq_ > 0.0f) {
-      min_launch_delay_ = 1.0f / PARAM.trig_freq_;
+    if (PARAM.expect_trig_freq_ > 0.0f) {
+      min_launch_delay_ = 1.0f / PARAM.expect_trig_freq_;
     } else {
       min_launch_delay_ = 0.0f;
     }
@@ -197,7 +200,7 @@ class Launcher : public LibXR::Application {
     while (1) {
       launcher->mutex_.Lock();
       launcher->Update();
-
+      launcher->Heat();
       launcher->Control();
       launcher->mutex_.Unlock();
 
@@ -209,16 +212,20 @@ class Launcher : public LibXR::Application {
    *
    */
   void Update() {
+    // 获取数据
     referee_data_.heat_limit = 260.0f;
-    referee_data_.heat_cooling = 20.0f;
+    referee_data_.heat_cooling = 30.0f;
+    heat_limit_.single_heat = 10.0f;
+    heat_limit_.heat_threshold = 200.0f;
 
     static float last_motor_angle = 0.0f;
     static bool initialized = false;
-
+    // 更新
     motor_fric_0_->Update();
     motor_fric_1_->Update();
     motor_trig_->Update();
 
+    // 计算trig_angle
     float current_motor_angle = motor_trig_->GetAngle();
 
     if (!initialized) {
@@ -284,8 +291,6 @@ class Launcher : public LibXR::Application {
           target_trig_angle_ += TrigStep;
         }
         TrigAngleControl(target_trig_angle_);
-        if (target_trig_angle_ > last_trig_angle) {
-        }
         last_trig_angle = target_trig_angle_;
       } break;
 
@@ -300,8 +305,6 @@ class Launcher : public LibXR::Application {
         }
         TrigAngleControl(target_trig_angle_);
 
-        if (target_trig_angle_ > last_trig_angle) {
-        }
         last_trig_angle = target_trig_angle_;
       } break;
       case TRIGMODE::JAM: {
@@ -335,7 +338,10 @@ class Launcher : public LibXR::Application {
     if (fabs(motor_trig_->GetOmega()) < 0.5f &&
         motor_trig_->GetCurrent() > jam_current) {
       launcherstate_ = LauncherState::JAMMED;
-    }  else if (fric_mod_ != FRICMODE::READY) {
+
+    } else if (!heat_limit_.allow_fire) {
+      launcherstate_ = LauncherState::OVERHEAT;
+    } else if (fric_mod_ != FRICMODE::READY) {
       launcherstate_ = LauncherState::STOP;
     } else if (launcher_cmd_.isfire) {
       launcherstate_ = LauncherState::NORMAL;
@@ -371,6 +377,59 @@ class Launcher : public LibXR::Application {
     }
   }
 
+  void Heat() {
+    auto now = LibXR::Timebase::GetMilliseconds();
+
+    static LibXR::MillisecondTimestamp last_heat_time = 0.0f;
+    float delta_time = (now - last_heat_time).ToSecondf();
+
+    if (delta_time >= 0.1) {
+      // 每周期都计算此周期的剩余热量
+      last_heat_time = now;
+      heat_limit_.current_heat +=
+          heat_limit_.single_heat * heat_limit_.launched_num;
+      heat_limit_.launched_num = 0;
+
+      if (heat_limit_.current_heat <
+          (static_cast<float>(referee_data_.heat_cooling / 10.0))) {
+        heat_limit_.current_heat = 0;
+      } else {
+        heat_limit_.current_heat -=
+            static_cast<float>(referee_data_.heat_cooling / 10.0);
+      }
+
+      float residuary_heat =
+          referee_data_.heat_limit - heat_limit_.current_heat;  // 剩余热量
+
+      // 控制control里的launcherstate
+      if (residuary_heat >= heat_limit_.single_heat) {
+        heat_limit_.allow_fire = true;
+      } else {
+        heat_limit_.allow_fire = false;
+      }
+
+      // 不同剩余热量启用不同实际弹频
+      if (heat_limit_.allow_fire) {
+        if (residuary_heat <= heat_limit_.single_heat + 0.001) {
+          trig_freq_ = referee_data_.heat_cooling / heat_limit_.single_heat;
+        } else if (residuary_heat <=
+                   heat_limit_.single_heat * heat_limit_.heat_threshold) {
+          float ratio = (residuary_heat - heat_limit_.single_heat) /
+                        (heat_limit_.single_heat * heat_limit_.heat_threshold -
+                         heat_limit_.single_heat);
+
+          ratio = std::max(0.0f, std::min(1.0f, ratio));
+          // 计算实际发射频率
+          float safe_freq =
+              referee_data_.heat_cooling / heat_limit_.single_heat;
+          trig_freq_ =
+              ratio * PARAM.expect_trig_freq_ + (1.0f - ratio) * safe_freq;
+        } else {
+          trig_freq_ = PARAM.expect_trig_freq_;
+        }
+      }
+    }
+  }
   /**
    * @brief 监控函数 (在此应用中未使用)
    *
@@ -383,6 +442,7 @@ class Launcher : public LibXR::Application {
   LauncherState launcherstate_ = LauncherState::STOP;
   LauncherParam PARAM;
   RefereeData referee_data_;
+  HeatLimit heat_limit_;
   TRIGMODE last_trig_mod = TRIGMODE::SAFE;
   TRIGMODE trig_mod_ = TRIGMODE::SAFE;
   FRICMODE fric_mod_ = FRICMODE::SAFE;
@@ -406,8 +466,6 @@ class Launcher : public LibXR::Application {
 
   CMD *cmd_;
   float dt_ = 0;
-  LibXR::MillisecondTimestamp now_ = 0.0f;
-  LibXR::MillisecondTimestamp last_online_time_ = 0;
   LibXR::MillisecondTimestamp last_jam_time = 0.0f;
   LibXR::MillisecondTimestamp jam_keep_time_ = 0.0f;
   bool press_continue_ = false;
@@ -418,6 +476,10 @@ class Launcher : public LibXR::Application {
   LibXR::Semaphore semaphore_;
   LibXR::Mutex mutex_;
   LibXR::Event launcher_event_;
+  struct ShotEvent {
+    LibXR::MillisecondTimestamp ts;
+  };
+  std::deque<ShotEvent> shot_event_;
   float fric_out_left = 0.0f;
   float fric_out_right = 0.0f;
   int is_reverse = 0;
@@ -439,6 +501,5 @@ class Launcher : public LibXR::Application {
     float alpha = dt_ / (TAU + dt_);
     return cur + alpha * (target - cur);
   }
-
   void SetMode(uint32_t mode) { fric_mod_ = static_cast<FRICMODE>(mode); }
 };
