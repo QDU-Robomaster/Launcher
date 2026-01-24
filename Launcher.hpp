@@ -276,7 +276,7 @@ class Launcher : public LibXR::Application {
     }
     // 后面需要加转速滤波
   }
-  // trig设置
+
   void SetTrig() {
     auto now = LibXR::Timebase::GetMilliseconds();
     switch (trig_mod_) {
