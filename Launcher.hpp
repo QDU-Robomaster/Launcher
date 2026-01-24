@@ -58,36 +58,33 @@ depends:
 === END MANIFEST === */
 // clang-format on
 
-
-
+#include <algorithm>
 
 #include "CMD.hpp"
 #include "RMMotor.hpp"
 #include "app_framework.hpp"
 #include "event.hpp"
 #include "libxr_cb.hpp"
+#include "libxr_def.hpp"
+#include "libxr_time.hpp"
 #include "message.hpp"
 #include "mutex.hpp"
 #include "pid.hpp"
 #include "timebase.hpp"
 #include "timer.hpp"
 
+
 namespace launcher::param {
 
-using Radian = float;
-using Rpm = float;
-using Ampere = float;
-
-constexpr Radian TrigStep = static_cast<float>(M_2PI) / 10;
-
-constexpr Rpm MinFricRpm = 2500.0f;
-
-constexpr Ampere jam_current = 10.0f;
-
-}
+constexpr float TrigStep = static_cast<float>(M_2PI) / 10;
+constexpr float MinFricRpm = 2500.0f;
+constexpr float jam_current = 10.0f;
+constexpr float ShotWindow = 0.02f;    // 20 ms
+constexpr float MinFricDrop = 150.0f;  // rpm
+}  // namespace launcher::param
 class Launcher : public LibXR::Application {
  public:
-  enum class LauncherState {
+  enum class LauncherState : uint8_t {
     STOP,
     NORMAL,
     JAMMED,
@@ -199,14 +196,17 @@ class Launcher : public LibXR::Application {
         LibXR::Topic(LibXR::Topic::Find("launcher_cmd", nullptr));
 
     tp_cmd_launcher.RegisterCallback(launcher_cmd_callback);
-
   }
 
   static void ThreadFunction(Launcher *launcher) {
     while (1) {
+      launcher->now_ = LibXR::Timebase::GetMilliseconds();
+      launcher->dt_ = (launcher->now_ - launcher->last_online_time_).ToSecond();
+      launcher->last_online_time_ = launcher->now_;
       launcher->mutex_.Lock();
       launcher->Update();
       launcher->Heat();
+      launcher->FricControl();
       launcher->Control();
       launcher->mutex_.Unlock();
 
@@ -251,11 +251,10 @@ class Launcher : public LibXR::Application {
     last_motor_angle = current_motor_angle;
   }
   void FricControl() {
-    auto now = LibXR::Timebase::GetMilliseconds();
     switch (fric_mod_) {
       case FRICMODE::RELAX: {
-      motor_fric_0_->CurrentControl(0);
-      motor_fric_1_->CurrentControl(0);
+        motor_fric_0_->CurrentControl(0);
+        motor_fric_1_->CurrentControl(0);
       } break;
       case FRICMODE::SAFE: {
         float out_rpm_0 = LowPass(0, motor_fric_0_->GetRPM());
@@ -280,11 +279,9 @@ class Launcher : public LibXR::Application {
       default:
         break;
     }
-
   }
 
   void SetTrig() {
-    auto now = LibXR::Timebase::GetMilliseconds();
     switch (trig_mod_) {
       case TRIGMODE::RELAX:
         motor_trig_->CurrentControl(0);
@@ -298,30 +295,30 @@ class Launcher : public LibXR::Application {
         }
         TrigAngleControl(target_trig_angle_);
         if (target_trig_angle_ > last_trig_angle) {
-          MarkShot();
+          BeginShotJudge();
         }
         last_trig_angle = target_trig_angle_;
       } break;
 
       case TRIGMODE::CONTINUE: {
-        float since_last = (now - last_trig_time_).ToSecondf();
+        float since_last = (now_ - last_trig_time_).ToSecondf();
         if (trig_freq_ > 0.0f) {
           float trig_speed = 1.0f / trig_freq_;
           if (since_last >= trig_speed) {
             target_trig_angle_ = target_trig_angle_ + launcher::param::TrigStep;
-            last_trig_time_ = now;
+            last_trig_time_ = now_;
           }
         }
         TrigAngleControl(target_trig_angle_);
 
         if (target_trig_angle_ > last_trig_angle) {
-          MarkShot();
+          BeginShotJudge();
         }
         last_trig_angle = target_trig_angle_;
       } break;
       case TRIGMODE::JAM: {
         // 正转卡弹时反转，反转卡弹时正转
-        jam_keep_time_ = (now - last_jam_time).ToSecond();
+        jam_keep_time_ = (now_ - last_jam_time).ToSecond();
         if (jam_keep_time_ > 0.02) {
           if (last_trig_mod != TRIGMODE::JAM) {
             is_reverse = 1;
@@ -334,7 +331,7 @@ class Launcher : public LibXR::Application {
             TrigAngleControl(target_trig_angle_);
           }
           is_reverse = !is_reverse;
-          last_jam_time = now;
+          last_jam_time = now_;
         }
       } break;
 
@@ -343,12 +340,12 @@ class Launcher : public LibXR::Application {
     }
 
     /*判断是否成功发射*/
-    CheckShot();
+    UpdateShotJudge();
 
     last_trig_mod = trig_mod_;
   }
   void Control() {
-    auto now = LibXR::Timebase::GetMilliseconds();
+    this->SetTrig();
 
     if (fabs(motor_trig_->GetOmega()) < 0.5f &&
         motor_trig_->GetCurrent() > launcher::param::jam_current) {
@@ -370,11 +367,11 @@ class Launcher : public LibXR::Application {
       case LauncherState::NORMAL:
         // 根据波轮按压的时间判断发射状态
         if (!last_fire_notify_) {
-          fire_press_time_ = now;
+          fire_press_time_ = now_;
           press_continue_ = false;
           trig_mod_ = TRIGMODE::SINGLE;
         } else {
-          if (!press_continue_ && (now - fire_press_time_ > 500)) {
+          if (!press_continue_ && (now_ - fire_press_time_ > 500)) {
             press_continue_ = true;
           }
           if (press_continue_) {
@@ -393,14 +390,12 @@ class Launcher : public LibXR::Application {
   }
 
   void Heat() {
-    auto now = LibXR::Timebase::GetMilliseconds();
-
     static LibXR::MillisecondTimestamp last_heat_time = 0.0f;
-    float delta_time = (now - last_heat_time).ToSecondf();
+    float delta_time = (now_ - last_heat_time).ToSecondf();
 
     if (delta_time >= 0.1) {
       /*每周期都计算此周期的剩余热量*/
-      last_heat_time = now;
+      last_heat_time = now_;
       heat_limit_.current_heat +=
           heat_limit_.single_heat * heat_limit_.launched_num;
       heat_limit_.launched_num = 0;
@@ -480,6 +475,8 @@ class Launcher : public LibXR::Application {
   CMD::LauncherCMD launcher_cmd_;
 
   CMD *cmd_;
+  LibXR::MillisecondTimestamp now_ = 0.0f;
+  LibXR::MillisecondTimestamp last_online_time_ = 0.0f;
   float dt_ = 0;
   LibXR::MillisecondTimestamp last_jam_time = 0.0f;
   LibXR::MillisecondTimestamp jam_keep_time_ = 0.0f;
@@ -491,23 +488,29 @@ class Launcher : public LibXR::Application {
   LibXR::Semaphore semaphore_;
   LibXR::Mutex mutex_;
   LibXR::Event launcher_event_;
-  struct ShotEvent {
-    LibXR::MillisecondTimestamp ts;
+  struct ShotJudge {
+    bool active = false;
+    float t = 0.0f;
+    float fric_drop_max = 0.0f;
   };
-  std::deque<ShotEvent> shot_event_;
+
+  ShotJudge shot_;
+
   float fric_out_left = 0.0f;
   float fric_out_right = 0.0f;
-  int is_reverse = 0;
+  bool is_reverse = 0;
   /*---------------------工具函数--------------------------------------------------*/
   void TrigAngleControl(float target_angle) {
     float plate_omega_ref = pid_trig_angle_.Calculate(
         target_angle, trig_angle_,
         motor_trig_->GetOmega() / PARAM.trig_gear_ratio, dt_);
-
-    float motor_omega_ref = plate_omega_ref;
+    float motor_omega_ref = std::clamp(
+        plate_omega_ref,
+        static_cast<float>(-1.5 * M_2PI) * trig_freq_ / PARAM.num_trig_tooth,
+        static_cast<float>(1.5 * M_2PI) * trig_freq_ / PARAM.num_trig_tooth);
     float out = pid_trig_sp_.Calculate(
         motor_omega_ref, motor_trig_->GetOmega() / PARAM.trig_gear_ratio, dt_);
-    // omega需要限幅，防止卡弹时十分大
+
     motor_trig_->CurrentControl(out);
   }
   /*指数缓变*/
@@ -516,26 +519,35 @@ class Launcher : public LibXR::Application {
     float alpha = dt_ / (TAU + dt_);
     return cur + alpha * (target - cur);
   }
-  void MarkShot() {
-    ShotEvent ev;
-    ev.ts = LibXR::Timebase::GetMilliseconds();
-    shot_event_.push_back(ev);
+  void BeginShotJudge() {
+    shot_.active = true;
+    shot_.t = 0.0f;
+    shot_.fric_drop_max = 0.0f;
   }
-  void CheckShot() {
-    if (shot_event_.empty()) return;
 
-    auto now_ts = LibXR::Timebase::GetMilliseconds();
-    while (!shot_event_.empty()) {
-      auto &ev = shot_event_.front();
-      float elapsed = (now_ts - ev.ts).ToSecondf();
-      if (elapsed >= (1 / trig_freq_)) {
-        if (motor_trig_->GetOmega() >= 0.88 * trig_freq_ &&
-            motor_fric_0_->GetRPM() < launcher::param::MinFricRpm &&
-            motor_fric_1_->GetRPM() < launcher::param::MinFricRpm) {
-          heat_limit_.launched_num++;
-        }
-      }
-      shot_event_.pop_front();
+  void UpdateShotJudge() {
+    auto last_check_time_ = LibXR::Timebase::GetMilliseconds();
+    /*未激活，直接返回*/
+    if (!shot_.active) {
+      return;
+    }
+
+    shot_.t = (now_ - last_check_time_).ToSecond();
+    float fric_avg = 0.5f * (motor_fric_0_->GetRPM() + motor_fric_1_->GetRPM());
+    float fric_drop = PARAM.fric_rpm_ - fric_avg;
+    shot_.fric_drop_max = std::max(shot_.fric_drop_max, fric_drop);
+
+    if (shot_.t < launcher::param::ShotWindow) {
+      return;
+    }
+
+    bool success = (shot_.fric_drop_max > launcher::param::MinFricDrop) &&
+                   (motor_trig_->GetOmega() >
+                    0.88 * M_2PI * trig_freq_ / PARAM.num_trig_tooth);
+
+    shot_.active = false;
+    if (success) {
+      heat_limit_.launched_num++;
     }
   }
 
