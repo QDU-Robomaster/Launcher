@@ -12,8 +12,8 @@ constructor_args:
   - cmd: '@&cmd'
   - task_stack_depth: 2048
   - launcher_param:
-      fric1_setpoint_speed: 500.0
-      fric2_setpoint_speed: 500.0
+      fric1_setpoint_speed: 4500.0
+      fric2_setpoint_speed: 3100.0
       default_bullet_speed: 0.0
       fric_radius: 6.0
       trig_gear_ratio: 19.0
@@ -80,7 +80,6 @@ depends:
 === END MANIFEST === */
 // clang-format on
 
-#include <sys/_intsup.h>
 #include <array>
 #include <cstdint>
 

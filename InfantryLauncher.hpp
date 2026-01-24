@@ -80,7 +80,8 @@ template <int FRIC_NUM, int TRIG_NUM>
 class InfantryLauncher {
  public:
   enum class TRIGMODE : uint8_t {
-    SAFE = 0,
+    RELAX = 0,
+    SAFE,
     SINGLE,
     CONTINUE,
     AIM,
@@ -328,6 +329,11 @@ class InfantryLauncher {
   LibXR::Mutex mutex_;
   uint32_t launcher_event_ = 0;
 
+  /**
+   * @brief 设置底盘模式 (由 Launcher 外壳调用)
+   * @param mode 要设置的新模式
+   */
+  void SetMode(uint32_t mode) { launcher_event_ = mode; }
   /*---------------------工具函数--------------------------------------------------*/
   void FricRPMControl(float output) {
     float out_left =
@@ -349,9 +355,5 @@ class InfantryLauncher {
 
     motor_trig_[0]->CurrentControl(out);
   }
-  /**
-   * @brief 设置底盘模式 (由 Launcher 外壳调用)
-   * @param mode 要设置的新模式
-   */
-  void SetMode(uint32_t mode) { launcher_event_ = mode;}
+
 };

@@ -12,8 +12,8 @@ constructor_args:
   - cmd: '@&cmd'
   - task_stack_depth: 2048
   - launcher_param:
-      fric1_setpoint_speed: 500.0
-      fric2_setpoint_speed: 500.0
+      fric1_setpoint_speed: 4500.0
+      fric2_setpoint_speed: 3100.0
       default_bullet_speed: 0.0
       fric_radius: 6.0
       trig_gear_ratio: 19.0
@@ -84,13 +84,13 @@ depends:
 #include <cstdint>
 
 #include "CMD.hpp"
-#include "HeroLauncher.hpp"
 #include "RMMotor.hpp"
 #include "app_framework.hpp"
 #include "cycle_value.hpp"
 #include "event.hpp"
 #include "libxr_def.hpp"
 #include "libxr_time.hpp"
+#include "libxr_type.hpp"
 #include "message.hpp"
 #include "mutex.hpp"
 #include "pid.hpp"
@@ -102,7 +102,8 @@ depends:
 
 
 enum class TRIGMODE : uint8_t {
-  SAFE = 0,
+  RELAX = 0,
+  SAFE ,
   SINGLE,
   CONTINUE,
   AIM,
@@ -184,8 +185,7 @@ class HeroLauncher {
 
 
     thread_.Create(this, ThreadFunction, "HeroLauncherThread", task_stack_depth,
-                   LibXR::Thread::Priority::MEDIUM);
-
+                   LibXR::Thread::Priority::HIGH);
     auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, HeroLauncher *HeroLauncher, uint32_t event_id) {
           UNUSED(in_isr);
@@ -194,7 +194,21 @@ class HeroLauncher {
         },
         this);
     cmd_->GetEvent().Register(CMD::CMD_EVENT_LOST_CTRL, lost_ctrl_callback);
+
+    auto launcher_cmd_callback = LibXR::Callback<LibXR::RawData&>::Create(
+        [](bool in_isr, HeroLauncher *HeroLauncher, LibXR::RawData& raw_data) {
+          UNUSED(in_isr);
+          CMD::LauncherCMD cmd_lau =
+              *reinterpret_cast<CMD::LauncherCMD *>(raw_data.addr_);
+          HeroLauncher->launcher_cmd_.isfire = cmd_lau.isfire;
+        },
+        this);
+
+    auto tp_cmd_launcher = LibXR::Topic(LibXR::Topic::Find("launcher_cmd", nullptr));
+
+    tp_cmd_launcher.RegisterCallback(launcher_cmd_callback);
   }
+
 
   static void ThreadFunction(HeroLauncher *HeroLauncher) {
     LibXR::Topic::ASyncSubscriber<CMD::LauncherCMD> launcher_cmd_tp(
@@ -204,17 +218,18 @@ class HeroLauncher {
       LibXR::MillisecondTimestamp last_time =
           LibXR::Timebase::GetMilliseconds();
 
-      if (launcher_cmd_tp.Available()) {
-        HeroLauncher->launcher_cmd_ = launcher_cmd_tp.GetData();
-        launcher_cmd_tp.StartWaiting();
-      }
+      // if (launcher_cmd_tp.Available()) {
+      //   HeroLauncher->launcher_cmd_ = launcher_cmd_tp.GetData();
+      //   launcher_cmd_tp.StartWaiting();
+      // }
       HeroLauncher->mutex_.Lock();
       HeroLauncher->Update();
       HeroLauncher->HeatLimit();
       HeroLauncher->Control();
 
       HeroLauncher->mutex_.Unlock();
-      HeroLauncher->thread_.SleepUntil(last_time, 2);
+      //HeroLauncher->thread_.SleepUntil(last_time, 2);
+      HeroLauncher->thread_.Sleep(2);
     }
   }
 
@@ -267,10 +282,6 @@ class HeroLauncher {
         fric_target_speed_[2] = 0;
         fric_target_speed_[3] = 0;
 
-        motor_fric_front_left_->Relax();
-        motor_fric_front_right_->Relax();
-        motor_fric_back_left_->Relax();
-        motor_fric_back_right_->Relax();
         break;
       case static_cast<uint32_t>(FRICMODE::READY):
 
@@ -283,7 +294,7 @@ class HeroLauncher {
         break;
     }
 
-    current_back_left_ = motor_fric_front_left_->GetCurrent();
+    current_back_left_ = motor_fric_back_left_->GetCurrent();
 
     if (first_loading_) {  //首次发弹进行弹丸位置标定
       if (trig_mod_ == TRIGMODE::SINGLE) {
@@ -303,7 +314,7 @@ class HeroLauncher {
       if (delay_time_ > 50) {//延迟50个控制周期
         if (std::abs(motor_fric_back_left_->GetCurrent()) > 5) {  // 发弹检测
           trig_zero_angle_ = trig_angle_;  // 获取电机当前位置
-          trig_setpoint_angle_ = trig_angle_ - M_2PI / 7.35f;  // 偏移量
+          trig_setpoint_angle_ = trig_angle_  - 0.55f;// 偏移量
 
           fire_flag_ = false;
           first_loading_ = false;
@@ -333,10 +344,7 @@ class HeroLauncher {
       if (start_fire_time_ > 0 && (now_ - start_fire_time_ > 100) &&
           !mark_launch_) {
         fire_flag_ = false;
-        //first_loading_ = false;
         enable_fire_ = false;
-        //start_loading_time_ = 0;
-        //delay_time_ = 0;
         start_fire_time_ = now_;
       }
 
@@ -365,18 +373,29 @@ class HeroLauncher {
     fric_output_[3] = fric_speed_pid_[3].Calculate(
         fric_target_speed_[3], motor_fric_back_right_->GetRPM(), dt_);
 
-    motor_fric_front_left_->CurrentControl(fric_output_[0]);
-    motor_fric_front_right_->CurrentControl(fric_output_[1]);
-    motor_fric_back_left_->CurrentControl(fric_output_[2]);
-    motor_fric_back_right_->CurrentControl(fric_output_[3]);
+    motor_fric_front_left_->CurrentControl(fric_output_[0] );
+    motor_fric_front_right_->CurrentControl(fric_output_[1] );
+    motor_fric_back_left_->CurrentControl(fric_output_[2] );
+    motor_fric_back_right_->CurrentControl(fric_output_[3] );
 
     trig_setpoint_speed_ =
         trig_angle_pid_.Calculate(trig_setpoint_angle_, trig_angle_, dt_);
 
     trig_output_ = trig_speed_pid_.Calculate(trig_setpoint_speed_,
                                              motor_trig_[0]->GetRPM(), dt_);
-
-    motor_trig_[0]->CurrentControl(trig_output_);
+//if(trig_mod_ == TRIGMODE::RELAX){trig_output_ = 0;}
+      switch (trig_mod_) {
+        case TRIGMODE::RELAX:
+          trig_output_ = 0.0f;
+          break;
+        case TRIGMODE::SAFE:
+        case TRIGMODE::SINGLE:
+        case TRIGMODE::CONTINUE:
+          break;
+        default:
+          break;
+      }
+      motor_trig_[0]->CurrentControl(trig_output_ );
   }
   void HeatLimit() {
     heat_ctrl_.heat_limit = referee_data_.heat_limit;
@@ -399,7 +418,7 @@ class HeroLauncher {
   void LostCtrl() {
     // 重置所有发射相关的状态变量到初始模式
     launcher_event_ = static_cast<uint32_t>(FRICMODE::SAFE);
-    trig_mod_ = TRIGMODE::SAFE;
+    trig_mod_ = TRIGMODE::RELAX;
 
     // 重置发射控制标志
     fire_flag_ = false;
@@ -424,6 +443,8 @@ class HeroLauncher {
     trig_angle_ = 0.0f;
     trig_setpoint_angle_ = 0.0f;
 
+    trig_output_ = 0.0f;
+
     // 重置速度目标值
     fric_target_speed_[0] = 0.0f;
     fric_target_speed_[1] = 0.0f;
@@ -447,7 +468,7 @@ class HeroLauncher {
 
   HeatControl heat_ctrl_;
 
-  bool first_loading_ = true;
+  bool first_loading_ = false;
 
   float dt_ = 0.0f;
 
