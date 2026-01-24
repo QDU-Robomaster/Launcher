@@ -112,10 +112,10 @@ class Launcher : public LibXR::Application {
     float fric_rpm_;
   } LauncherParam;
   typedef struct {
-    float single_heat;  // 单发热量
+    float single_heat;
     float launched_num;
     float current_heat;
-    float heat_threshold;  // 热量限制阈值
+    float heat_threshold;
     bool allow_fire;
   } HeatLimit;
   /**
@@ -365,7 +365,7 @@ class Launcher : public LibXR::Application {
         trig_mod_ = TRIGMODE::SAFE;
         break;
       case LauncherState::NORMAL:
-        // 根据波轮按压的时间判断发射状态
+
         if (!last_fire_notify_) {
           fire_press_time_ = now_;
           press_continue_ = false;
@@ -409,7 +409,7 @@ class Launcher : public LibXR::Application {
       }
 
       float residuary_heat =
-          referee_data_.heat_limit - heat_limit_.current_heat;  // 剩余热量
+          referee_data_.heat_limit - heat_limit_.current_heat;  
 
       /*控制control里的launcherstate*/
       if (residuary_heat >= heat_limit_.single_heat) {
