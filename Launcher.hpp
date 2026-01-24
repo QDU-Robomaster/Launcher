@@ -291,6 +291,9 @@ class Launcher : public LibXR::Application {
           target_trig_angle_ += TrigStep;
         }
         TrigAngleControl(target_trig_angle_);
+        if (target_trig_angle_ > last_trig_angle) {
+          MarkShot();
+        }
         last_trig_angle = target_trig_angle_;
       } break;
 
@@ -305,6 +308,9 @@ class Launcher : public LibXR::Application {
         }
         TrigAngleControl(target_trig_angle_);
 
+        if (target_trig_angle_ > last_trig_angle) {
+          MarkShot();
+        }
         last_trig_angle = target_trig_angle_;
       } break;
       case TRIGMODE::JAM: {
@@ -329,6 +335,8 @@ class Launcher : public LibXR::Application {
       default:
         break;
     }
+    // 判断是否成功发射
+    CheckShot();
 
     last_trig_mod = trig_mod_;
   }
@@ -346,7 +354,7 @@ class Launcher : public LibXR::Application {
     } else if (launcher_cmd_.isfire) {
       launcherstate_ = LauncherState::NORMAL;
     }
-    last_fire_notify_ = launcher_cmd_.isfire;
+
 
     switch (launcherstate_) {
       case LauncherState::STOP:
@@ -375,6 +383,7 @@ class Launcher : public LibXR::Application {
       default:
         break;
     }
+    last_fire_notify_ = launcher_cmd_.isfire;
   }
 
   void Heat() {
@@ -501,5 +510,28 @@ class Launcher : public LibXR::Application {
     float alpha = dt_ / (TAU + dt_);
     return cur + alpha * (target - cur);
   }
+  void MarkShot() {
+    ShotEvent ev;
+    ev.ts = LibXR::Timebase::GetMilliseconds();
+    shot_event_.push_back(ev);
+  }
+  void CheckShot() {
+    if (shot_event_.empty()) return;
+
+    auto now_ts = LibXR::Timebase::GetMilliseconds();
+    while (!shot_event_.empty()) {
+      auto &ev = shot_event_.front();
+      float elapsed = (now_ts - ev.ts).ToSecondf();
+      if (elapsed >= (1 / trig_freq_)) {
+        if (motor_trig_->GetOmega() >= 0.88 * trig_freq_ &&
+            motor_fric_0_->GetRPM() < MinFricRpm &&
+            motor_fric_1_->GetRPM() < MinFricRpm) {
+          heat_limit_.launched_num++;
+        }
+      }
+      shot_event_.pop_front();
+    }
+  }
+
   void SetMode(uint32_t mode) { fric_mod_ = static_cast<FRICMODE>(mode); }
 };
