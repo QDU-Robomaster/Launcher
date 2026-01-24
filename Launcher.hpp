@@ -78,7 +78,7 @@ depends:
 #include "timebase.hpp"
 #include "timer.hpp"
 #define TrigStep static_cast<float>(M_2PI / PARAM.num_trig_tooth)
-#define MinFricRpm 3500
+#define MinFricRpm 2500
 #define jam_current 10
 class Launcher : public LibXR::Application {
  public:
@@ -516,6 +516,8 @@ class Launcher : public LibXR::Application {
     shot_event_.push_back(ev);
   }
   void CheckShot() {
+
+
     if (shot_event_.empty()) return;
 
     auto now_ts = LibXR::Timebase::GetMilliseconds();
