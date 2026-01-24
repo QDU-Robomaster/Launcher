@@ -353,3 +353,4 @@ class InfantryLauncher {
     motor_trig_[0]->CurrentControl(out);
   }
 };
+

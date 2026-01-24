@@ -252,3 +252,4 @@ class HeroLauncher {
   LibXR::Mutex mutex_;
   uint32_t launcher_event_;
 };
+

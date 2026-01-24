@@ -115,6 +115,7 @@ class Launcher : public LibXR::Application {
     float trig_freq_;
   };
 
+  
   Launcher(LibXR::HardwareContainer& hw, LibXR::ApplicationManager& app,
            RMMotor* motor_fric_front_left, RMMotor* motor_fric_front_right,
            RMMotor* motor_fric_back_left, RMMotor* motor_fric_back_right,
