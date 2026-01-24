@@ -80,8 +80,6 @@ depends:
 === END MANIFEST === */
 // clang-format on
 
-#include <sys/_intsup.h>
-
 #include <array>
 #include <cstdint>
 
@@ -91,7 +89,6 @@ depends:
 #include "RMMotor.hpp"
 #include "app_framework.hpp"
 #include "libxr_def.hpp"
-#include "pid.hpp"
 
 enum class LauncherEvent : uint8_t {
   SET_MODE_SAFE,
