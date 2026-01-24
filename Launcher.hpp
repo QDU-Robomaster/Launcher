@@ -47,6 +47,7 @@ constructor_args:
       trig_gear_ratio: 36.0
       num_trig_tooth: 10
       expect_trig_freq_: 15
+      fric_rpm_: 3000
 template_args:
 required_hardware:
   - dr16
@@ -59,15 +60,18 @@ depends:
 
 #include <cmath>
 #include <cstdint>
+#include <deque>
 
 #include "CMD.hpp"
 #include "RMMotor.hpp"
 #include "app_framework.hpp"
+#include "cmsis_gcc.h"
 #include "cycle_value.hpp"
 #include "event.hpp"
 #include "libxr_cb.hpp"
 #include "libxr_def.hpp"
 #include "libxr_time.hpp"
+#include "lockfree_queue.hpp"
 #include "message.hpp"
 #include "mutex.hpp"
 #include "pid.hpp"
@@ -83,7 +87,7 @@ class Launcher : public LibXR::Application {
     JAMMED,
     OVERHEAT,
   };
-  enum class TRIGMODE : uint8_t { RELAX, SAFE, SINGLE,CONTINUE, JAM };
+  enum class TRIGMODE : uint8_t { RELAX, SAFE, SINGLE, CONTINUE, JAM };
 
   enum class FRICMODE : uint8_t {
     RELAX,
@@ -95,13 +99,14 @@ class Launcher : public LibXR::Application {
     float heat_limit;
     float heat_cooling;
   } RefereeData;
-  struct LauncherParam {
+  typedef struct {
     float default_bullet_speed;
     float fric_radius;
     float trig_gear_ratio;
     uint8_t num_trig_tooth;
     float trig_freq_;
-  };
+    float fric_rpm_;
+  } LauncherParam;
   typedef struct {
     float single_heat;  // 单发热量
     float launched_num;
@@ -109,12 +114,6 @@ class Launcher : public LibXR::Application {
     float heat_threshold;  // 热量限制阈值
     bool allow_fire;
   } HeatLimit;
-  enum class ShotState {
-    Sampling,   // 采样中，等待最小采样时间
-    Confirmed,  // 成功发射
-    Failed      // 超时 空发 异常
-  };
-
   /**
    * @brief Launcher 构造函数
    *
@@ -199,14 +198,25 @@ class Launcher : public LibXR::Application {
 
   static void ThreadFunction(Launcher *launcher) {
     while (1) {
-      launcher->mutex_.Lock();
+      // control和heat同步进行，共用一个时间
+      launcher->now_ = LibXR::Timebase::GetMilliseconds();
+      // 防止第一次now过大,dt_不可控
+      if (launcher->start_) {
+        launcher->dt_ =
+            (launcher->now_ - launcher->last_online_time_).ToSecondf();
+      } else {
+        launcher->dt_ = 0.02;
+        launcher->start_ = true;
+      }
+      launcher->last_online_time_ = launcher->now_;
 
+      launcher->mutex_.Lock();
       launcher->Update();
       launcher->TrigModeSelection();
       launcher->CaclTarget();
       launcher->mutex_.Unlock();
 
-      LibXR::Thread::Sleep(2);
+      LibXR::Thread ::Sleep(2);
     }
   }
   /**
@@ -232,11 +242,9 @@ class Launcher : public LibXR::Application {
       return;
     }
 
-    float last_angle = last_motor_angle;
-    float current_angle = current_motor_angle;
+    float delta_trig_angle = LibXR::CycleValue<float>(current_motor_angle) -
+                             LibXR::CycleValue<float>(last_motor_angle);
 
-    float delta_trig_angle = LibXR::CycleValue<float>(current_angle) -
-                             LibXR::CycleValue<float>(last_angle);
     if (!motor_trig_->GetReverse()) {
       trig_angle_ += delta_trig_angle / PARAM.trig_gear_ratio;
     } else {
@@ -276,12 +284,10 @@ class Launcher : public LibXR::Application {
 
     switch (fric_mod_) {
       case FRICMODE::SAFE:
-        fric_rpm_ = 0.0f;
-        FricRPMControl(fric_rpm_);
+        FricRPMControl(PARAM.fric_rpm_);
         break;
       case FRICMODE::READY:
-        fric_rpm_ = 3000.0f;
-        FricRPMControl(fric_rpm_);
+        FricRPMControl(PARAM.fric_rpm_);
         break;
       default:
         break;
@@ -342,9 +348,9 @@ class Launcher : public LibXR::Application {
   TRIGMODE trig_mod_ = TRIGMODE::SAFE;
   FRICMODE fric_mod_ = FRICMODE::SAFE;
 
-  float target_trig_angle_ = 0.0f;
-  float trig_angle_ = 0.0f;
-  float fric_rpm_ = 0.0f;
+  LibXR::CycleValue<float> target_trig_angle_ = 0.0f;
+  LibXR::CycleValue<float> trig_angle_ = 0.0f;
+  LibXR::CycleValue<float> last_trig_angle_ = 0.0f;
   float min_launch_delay_ = 0.0f;
   LibXR::MillisecondTimestamp last_trig_time_ = 0;
 
@@ -361,6 +367,7 @@ class Launcher : public LibXR::Application {
 
   CMD *cmd_;
   float dt_ = 0;
+  LibXR::MillisecondTimestamp now_ = 0.0f;
   LibXR::MillisecondTimestamp last_online_time_ = 0;
 
   bool last_fire_notify_ = false;
@@ -371,7 +378,7 @@ class Launcher : public LibXR::Application {
   LibXR::Semaphore semaphore_;
   LibXR::Mutex mutex_;
   LibXR::Event launcher_event_;
-
+  bool start_= false;
   /*---------------------工具函数--------------------------------------------------*/
   void FricRPMControl(float output) {
     float out_left =
