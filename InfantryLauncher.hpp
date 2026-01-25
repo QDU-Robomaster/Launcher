@@ -193,15 +193,7 @@ class InfantryLauncher {
 
     cmd_->GetEvent().Register(CMD::CMD_EVENT_LOST_CTRL, lost_ctrl_callback);
 
-    auto callback = LibXR::Callback<uint32_t>::Create(
-        [](bool in_isr, InfantryLauncher *launcher, uint32_t event_id) {
-          UNUSED(in_isr);
-          launcher->SetMode(event_id);
-        },
-        this);
-    launcher_event_.Register(static_cast<uint32_t>(FRICMODE::RELAX), callback);
-    launcher_event_.Register(static_cast<uint32_t>(FRICMODE::SAFE), callback);
-    launcher_event_.Register(static_cast<uint32_t>(FRICMODE::READY), callback);
+   
     auto launcher_cmd_callback = LibXR::Callback<LibXR::RawData &>::Create(
         [](bool in_isr, InfantryLauncher *Launcher, LibXR::RawData &raw_data) {
           UNUSED(in_isr);
