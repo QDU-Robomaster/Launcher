@@ -139,7 +139,7 @@ class HeroLauncher {
     float fric1_setpoint_speed;
     /*二级摩擦轮转速*/
     float fric2_setpoint_speed;
-    /*默认弹速*/
+/*默认弹速*/
     float default_bullet_speed;
     /*摩擦轮半径*/
     float fric_radius;

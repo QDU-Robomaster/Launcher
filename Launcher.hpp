@@ -90,6 +90,7 @@ depends:
 #include "pid.hpp"
 
 enum class LauncherEvent : uint8_t {
+  SET_MODE_RELAX,
   SET_MODE_SAFE,
   SET_MODE_READY,
 };
@@ -102,7 +103,7 @@ class Launcher : public LibXR::Application {
     float fric1_setpoint_speed;
     /*二级摩擦轮转速*/
     float fric2_setpoint_speed;
-    /*默认弹速*/
+/*默认弹速*/
     float default_bullet_speed;
     float fric_radius;
     float trig_gear_ratio;
@@ -143,7 +144,8 @@ class Launcher : public LibXR::Application {
           launcher->EventHandler(event_id);
         },
         this);
-
+     launcher_event_.Register(
+        static_cast<uint32_t>(LauncherEvent::SET_MODE_RELAX), callback);
     launcher_event_.Register(
         static_cast<uint32_t>(LauncherEvent::SET_MODE_SAFE), callback);
     launcher_event_.Register(
