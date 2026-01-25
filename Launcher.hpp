@@ -103,6 +103,8 @@ class Launcher : public LibXR::Application {
     float fric1_setpoint_speed;
     /*二级摩擦轮转速*/
     float fric2_setpoint_speed;
+/*默认弹速*/
+    float default_bullet_speed;
     float fric_radius;
     float trig_gear_ratio;
     uint8_t num_trig_tooth;
