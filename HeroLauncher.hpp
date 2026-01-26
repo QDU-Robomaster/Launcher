@@ -110,7 +110,8 @@ class HeroLauncher {
   };
 
   enum class FRICMODE : uint8_t {
-    SAFE = 0,
+    RELAX,
+    SAFE ,
     READY,
   };
 
@@ -183,7 +184,7 @@ class HeroLauncher {
 
 
     thread_.Create(this, ThreadFunction, "HeroLauncherThread", task_stack_depth,
-                   LibXR::Thread::Priority::HIGH);
+                   LibXR::Thread::Priority::MEDIUM);
     auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, HeroLauncher *HeroLauncher, uint32_t event_id) {
           UNUSED(in_isr);
@@ -458,7 +459,7 @@ class HeroLauncher {
 
   HeatControl heat_ctrl_;
 
-  bool first_loading_ = false;
+  bool first_loading_ = true;
 
   float dt_ = 0.0f;
 
