@@ -395,7 +395,7 @@ class HeroLauncher {
     heat_ctrl_.cooling_rate = referee_data_.cooling_rate;
     heat_ctrl_.cooling_rate = 1000;  // for debug
     heat_ctrl_.heat -=
-        heat_ctrl_.cooling_rate / 500.0;  // 每个控制周期的冷却恢复
+        heat_ctrl_.cooling_rate / 500.0f;  // 每个控制周期的冷却恢复
     if (fired_ >= 1) {
       heat_ctrl_.heat += heat_ctrl_.heat_increase;
       fired_ = 0;
