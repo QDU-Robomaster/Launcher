@@ -61,9 +61,7 @@ constructor_args:
   - launcher_param:
       fric1_setpoint_speed: 4950.0
       fric2_setpoint_speed: 3820.0
-      default_bullet_speed: 0.0
-      fric_radius: 6.0
-      trig_gear_ratio: 19.203208
+      trig_gear_ratio: 19.2032
       num_trig_tooth: 6
       trig_freq_: 0.0
   - cmd: '@&cmd'
@@ -128,7 +126,6 @@ class Launcher : public LibXR::Application {
             typename LauncherType::LauncherParam{
                 launcher_param.fric1_setpoint_speed,
                 launcher_param.fric2_setpoint_speed,
-                launcher_param.default_bullet_speed, launcher_param.fric_radius,
                 launcher_param.trig_gear_ratio, launcher_param.num_trig_tooth,
                 launcher_param.trig_freq_},
             cmd) {
