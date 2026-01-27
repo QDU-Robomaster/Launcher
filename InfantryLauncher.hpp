@@ -78,7 +78,7 @@ depends:
 namespace launcher::param {
 constexpr float TRIGSTEP = static_cast<float>(M_2PI) / 10;
 constexpr float HEAT_CHECK_TIME = 0.1;
-constexpr float CHECK_JAM_TIME = 0.02;
+constexpr float JAM_CHECK_TIME = 0.02;
 constexpr float JAM_CURRENT = 8.0f;
 constexpr float SHOT_WINDOW = 0.004f;
 constexpr float MAX_FRIC_CUR = 2.0f;
@@ -205,13 +205,10 @@ class InfantryLauncher {
     launcher->last_online_time_ = now;
 
     while (1) {
-      launcher->mutex_.Lock();
       launcher->Update();
       launcher->Heat();
       launcher->FricControl();
       launcher->Control();
-      launcher->mutex_.Unlock();
-
       LibXR::Thread::Sleep(2);
     }
   }
@@ -250,6 +247,18 @@ class InfantryLauncher {
       trig_angle_ -= delta_trig_angle / param_.trig_gear_ratio;
     }
     last_motor_angle = current_motor_angle;
+
+    if (fabs(motor_trig_->GetCurrent()) > launcher::param::JAM_CURRENT) {
+      launcherstate_ = LauncherState::JAMMED;
+    } else if (!heat_limit_.allow_fire) {
+      launcherstate_ = LauncherState::OVERHEAT;
+    } else if (fric_mod_ != FRICMODE::READY) {
+      launcherstate_ = LauncherState::STOP;
+    } else if (launcher_cmd_.isfire) {
+      launcherstate_ = LauncherState::NORMAL;
+    } else {
+      trig_mod_ = TRIGMODE::SAFE;
+    }
   }
   void FricControl() {
     switch (fric_mod_) {
@@ -260,8 +269,8 @@ class InfantryLauncher {
       } break;
       case FRICMODE::SAFE: {
         ready_ = false;
-        out_rpm_0_ = LowPass(0, motor_fric_0_->GetRPM());
-        out_rpm_1_ = LowPass(0, motor_fric_1_->GetRPM());
+        out_rpm_0_ = LowChange(0, motor_fric_0_->GetRPM());
+        out_rpm_1_ = LowChange(0, motor_fric_1_->GetRPM());
         /*防止震荡*/
         if (motor_fric_0_->GetRPM() < launcher::param::MIN_FRIC_RPM ||
             motor_fric_1_->GetRPM() < launcher::param::MIN_FRIC_RPM) {
@@ -334,7 +343,7 @@ class InfantryLauncher {
         jam_keep_time_ =
             static_cast<uint32_t>((now - last_jam_time_).ToSecondf());
         if (static_cast<float>(jam_keep_time_) >
-            launcher::param::CHECK_JAM_TIME) {
+            launcher::param::JAM_CHECK_TIME) {
           if (last_trig_mod_ != TRIGMODE::JAM) {
             is_reverse_ = 1;
           }
@@ -359,18 +368,6 @@ class InfantryLauncher {
     auto now = LibXR::Timebase::GetMilliseconds();
 
     this->SetTrig();
-
-    if (fabs(motor_trig_->GetCurrent()) > launcher::param::JAM_CURRENT) {
-      launcherstate_ = LauncherState::JAMMED;
-    } else if (!heat_limit_.allow_fire) {
-      launcherstate_ = LauncherState::OVERHEAT;
-    } else if (fric_mod_ != FRICMODE::READY) {
-      launcherstate_ = LauncherState::STOP;
-    } else if (launcher_cmd_.isfire) {
-      launcherstate_ = LauncherState::NORMAL;
-    } else {
-      trig_mod_ = TRIGMODE::SAFE;
-    }
 
     switch (launcherstate_) {
       case LauncherState::STOP:
@@ -526,7 +523,7 @@ class InfantryLauncher {
     motor_trig_->CurrentControl(out);
   }
   /*指数缓变*/
-  float LowPass(float target, float cur) {
+  float LowChange(float target, float cur) {
     constexpr float TAU = 0.15f;
     float alpha = dt_ / (TAU + dt_);
     return cur + alpha * (target - cur);
