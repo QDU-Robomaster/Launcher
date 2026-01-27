@@ -98,6 +98,8 @@ depends:
 #include "timebase.hpp"
 #include "uart.hpp"
 
+#define TRIG_ZERO_ANGLE_OFFSET (0.55f)  // 拨弹盘零点偏移角度
+#define TRIG_LOADING_ANGLE_STEP (static_cast<float>(M_2PI) / 1002.0f)  // 首次发弹标定的角度步长
 
 class HeroLauncher {
  public:
@@ -110,7 +112,7 @@ class HeroLauncher {
   };
 
   enum class FRICMODE : uint8_t {
-    RELAX,
+    RELAX = 0,
     SAFE ,
     READY,
   };
@@ -140,10 +142,6 @@ class HeroLauncher {
     float fric1_setpoint_speed;
     /*二级摩擦轮转速*/
     float fric2_setpoint_speed;
-/*默认弹速*/
-    float default_bullet_speed;
-    /*摩擦轮半径*/
-    float fric_radius;
     /*拨弹盘电机减速比*/
     float trig_gear_ratio;
     /*拨齿数目*/
@@ -298,7 +296,7 @@ class HeroLauncher {
           start_loading_time_ = LibXR::Timebase::GetMilliseconds();
         }
 
-        trig_setpoint_angle_ -= M_2PI / 1002.0f;
+        trig_setpoint_angle_ -= TRIG_LOADING_ANGLE_STEP;
         last_change_angle_time_ = LibXR::Timebase::GetMilliseconds();
 
         delay_time_++;
@@ -307,7 +305,7 @@ class HeroLauncher {
       if (delay_time_ > 50) {  // 延迟50个控制周期
         if (std::abs(motor_fric_back_left_->GetCurrent()) > 5) {  // 发弹检测
           trig_zero_angle_ = trig_angle_;              // 获取电机当前位置
-          trig_setpoint_angle_ = trig_angle_ - 0.55f;  // 偏移量
+          trig_setpoint_angle_ = trig_angle_ - TRIG_ZERO_ANGLE_OFFSET;  // 偏移量
 
           fire_flag_ = false;
           first_loading_ = false;
@@ -322,7 +320,8 @@ class HeroLauncher {
         mark_launch_ = false;
         if (!enable_fire_) {
           if (heat_ctrl_.available_shot) {
-            trig_setpoint_angle_ -= M_2PI / 6.0f;
+            trig_setpoint_angle_ -= static_cast<float>(M_2PI) /
+                                    static_cast<float>(PARAM.num_trig_tooth);
 
             enable_fire_ = true;
             mark_launch_ = false;
