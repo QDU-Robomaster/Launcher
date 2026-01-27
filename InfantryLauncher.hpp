@@ -286,6 +286,7 @@ class InfantryLauncher {
         motor_fric_0_->CurrentControl(fric_out_left_);
         motor_fric_1_->CurrentControl(fric_out_right_);
       }
+      break;
       default:
         break;
     }
