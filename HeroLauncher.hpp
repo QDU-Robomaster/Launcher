@@ -61,9 +61,7 @@ constructor_args:
   - launcher_param:
       fric1_setpoint_speed: 4950.0
       fric2_setpoint_speed: 3820.0
-      default_bullet_speed: 0.0
-      fric_radius: 6.0
-      trig_gear_ratio: 19.203208
+      trig_gear_ratio: 19.2032
       num_trig_tooth: 6
       trig_freq_: 0.0
   - cmd: '@&cmd'
@@ -98,6 +96,8 @@ depends:
 #include "timebase.hpp"
 #include "uart.hpp"
 
+#define TRIG_ZERO_ANGLE_OFFSET (0.55f)  // 拨弹盘零点偏移角度
+#define TRIG_LOADING_ANGLE_STEP (static_cast<float>(M_2PI) / 1002.0f)  // 首次发弹标定的角度步长
 
 class HeroLauncher {
  public:
@@ -106,11 +106,11 @@ class HeroLauncher {
     SAFE,
     SINGLE,
     CONTINUE,
-    AIM,
   };
 
   enum class FRICMODE : uint8_t {
-    SAFE = 0,
+    RELAX = 0,
+    SAFE ,
     READY,
   };
 
@@ -139,10 +139,6 @@ class HeroLauncher {
     float fric1_setpoint_speed;
     /*二级摩擦轮转速*/
     float fric2_setpoint_speed;
-/*默认弹速*/
-    float default_bullet_speed;
-    /*摩擦轮半径*/
-    float fric_radius;
     /*拨弹盘电机减速比*/
     float trig_gear_ratio;
     /*拨齿数目*/
@@ -183,7 +179,7 @@ class HeroLauncher {
 
 
     thread_.Create(this, ThreadFunction, "HeroLauncherThread", task_stack_depth,
-                   LibXR::Thread::Priority::HIGH);
+                   LibXR::Thread::Priority::MEDIUM);
     auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, HeroLauncher *HeroLauncher, uint32_t event_id) {
           UNUSED(in_isr);
@@ -297,7 +293,7 @@ class HeroLauncher {
           start_loading_time_ = LibXR::Timebase::GetMilliseconds();
         }
 
-        trig_setpoint_angle_ -= M_2PI / 1002.0f;
+        trig_setpoint_angle_ -= TRIG_LOADING_ANGLE_STEP;
         last_change_angle_time_ = LibXR::Timebase::GetMilliseconds();
 
         delay_time_++;
@@ -306,7 +302,7 @@ class HeroLauncher {
       if (delay_time_ > 50) {  // 延迟50个控制周期
         if (std::abs(motor_fric_back_left_->GetCurrent()) > 5) {  // 发弹检测
           trig_zero_angle_ = trig_angle_;              // 获取电机当前位置
-          trig_setpoint_angle_ = trig_angle_ - 0.55f;  // 偏移量
+          trig_setpoint_angle_ = trig_angle_ - TRIG_ZERO_ANGLE_OFFSET;  // 偏移量
 
           fire_flag_ = false;
           first_loading_ = false;
@@ -321,7 +317,8 @@ class HeroLauncher {
         mark_launch_ = false;
         if (!enable_fire_) {
           if (heat_ctrl_.available_shot) {
-            trig_setpoint_angle_ -= M_2PI / 6.0f;
+            trig_setpoint_angle_ -= static_cast<float>(M_2PI) /
+                                    static_cast<float>(PARAM.num_trig_tooth);
 
             enable_fire_ = true;
             mark_launch_ = false;
@@ -394,7 +391,7 @@ class HeroLauncher {
     heat_ctrl_.cooling_rate = referee_data_.cooling_rate;
     heat_ctrl_.cooling_rate = 1000;  // for debug
     heat_ctrl_.heat -=
-        heat_ctrl_.cooling_rate / 500.0;  // 每个控制周期的冷却恢复
+        heat_ctrl_.cooling_rate / 500.0f;  // 每个控制周期的冷却恢复
     if (fired_ >= 1) {
       heat_ctrl_.heat += heat_ctrl_.heat_increase;
       fired_ = 0;
@@ -458,7 +455,7 @@ class HeroLauncher {
 
   HeatControl heat_ctrl_;
 
-  bool first_loading_ = false;
+  bool first_loading_ = true;
 
   float dt_ = 0.0f;
 
