@@ -103,7 +103,7 @@ class Launcher : public LibXR::Application {
     float fric1_setpoint_speed;
     /*二级摩擦轮转速*/
     float fric2_setpoint_speed;
-/*默认弹速*/
+    /*默认弹速*/
     float default_bullet_speed;
     float fric_radius;
     float trig_gear_ratio;
@@ -122,7 +122,7 @@ class Launcher : public LibXR::Application {
            LibXR::PID<float>::Param pid_fric_speed_1,
            LibXR::PID<float>::Param pid_fric_speed_2,
            LibXR::PID<float>::Param pid_fric_speed_3,
-           LauncherParam launcher_param, CMD* cmd )
+           LauncherParam launcher_param, CMD* cmd)
       : launcher_(
             hw, app, motor_fric_front_left, motor_fric_front_right,
             motor_fric_back_left, motor_fric_back_right, motor_trig,
@@ -144,7 +144,7 @@ class Launcher : public LibXR::Application {
           launcher->EventHandler(event_id);
         },
         this);
-     launcher_event_.Register(
+    launcher_event_.Register(
         static_cast<uint32_t>(LauncherEvent::SET_MODE_RELAX), callback);
     launcher_event_.Register(
         static_cast<uint32_t>(LauncherEvent::SET_MODE_SAFE), callback);
@@ -163,12 +163,14 @@ class Launcher : public LibXR::Application {
    * @brief 事件处理器，根据传入的事件ID执行相应操作
    * @param event_id 触发的事件ID
    */
-  void EventHandler(uint32_t event_id) { launcher_.SetMode(event_id); }
+  void EventHandler(uint32_t event_id) {
+    launcher_.SetMode(
+        static_cast<uint32_t>(static_cast<LauncherEvent>(event_id)));
+  }
 
   void OnMonitor() override {}
 
  private:
   LauncherType launcher_;
   LibXR::Event launcher_event_;
-
 };
