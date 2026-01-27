@@ -106,7 +106,6 @@ class HeroLauncher {
     SAFE,
     SINGLE,
     CONTINUE,
-    AIM,
   };
 
   enum class FRICMODE : uint8_t {
