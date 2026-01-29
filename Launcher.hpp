@@ -84,7 +84,6 @@ constexpr float MIN_FRIC_RPM = 200.0f;
 
 class Launcher {
  public:
-
   enum class TRIGMODE : uint8_t { RELAX, SAFE, SINGLE, CONTINUE, JAM };
 
   enum class FRICMODE : uint8_t {
@@ -98,9 +97,7 @@ class Launcher {
     float heat_cooling;
   } RefereeData;
   struct LauncherParam {
-    /*一级摩擦轮转速*/
     float fric_rpm_;
-    /*拨弹盘电机减速比*/
     float trig_gear_ratio;
     uint8_t num_trig_tooth;
     float trig_freq_;
@@ -131,7 +128,7 @@ class Launcher {
            LibXR::PID<float>::Param pid_param_fric_0,
            LibXR::PID<float>::Param pid_param_fric_1,
            RMMotor *motor_fric_front_left, RMMotor *motor_fric_front_right,
-           RMMotor *motor_trig, LauncherParam launch_param )
+           RMMotor *motor_trig, LauncherParam launch_param)
       : param_(launch_param),
         motor_fric_0_(motor_fric_front_left),
         motor_fric_1_(motor_fric_front_right),
