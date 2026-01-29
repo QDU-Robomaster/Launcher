@@ -8,23 +8,23 @@ constructor_args:
   - cmd: '@&cmd'
   - pid_param_trig_angle:
       k: 1.0
-      p: 20.0
+      p: 35.0
       i: 0.0
       d: 0.0
       i_limit: 0.0
-      out_limit: 0.0
+      out_limit: 10.0
       cycle: false
   - pid_param_trig_speed:
       k: 1.0
-      p: 0.2
-      i: 0.0
+      p: 0.65
+      i: 0.8
       d: 0.0
       i_limit: 0.0
       out_limit: 0.0
       cycle: false
   - pid_param_fric_0:
       k: 1.0
-      p: 0.000002
+      p: 0.003
       i: 0.0
       d: 0.0
       i_limit: 0.0
@@ -32,7 +32,7 @@ constructor_args:
       cycle: false
   - pid_param_fric_1:
       k: 1.0
-      p: 0.000002
+      p: 0.003
       i: 0.0
       d: 0.0
       i_limit: 0.0
@@ -43,9 +43,9 @@ constructor_args:
   - motor_trig: '@&motor_trig'
   - launcher_param:
       fric_rpm: 5000
-      trig_gear_ratio: 0.0
-      num_trig_tooth: 0
-      expect_trig_freq_: 0.0
+      trig_gear_ratio: 36.0
+      num_trig_tooth: 10
+      expect_trig_freq_: 10.0
 template_args:
 required_hardware:
   - dr16
@@ -172,10 +172,9 @@ class Launcher {
     launcher->last_online_time_ = now;
 
     while (1) {
-      launcher->mutex_.Lock();
       launcher->Update();
       launcher->FricControl();
-      launcher->mutex_.Unlock();
+      launcher->SetTrig();
 
       LibXR::Thread::Sleep(2);
     }
@@ -218,8 +217,8 @@ class Launcher {
         motor_fric_1_->CurrentControl(0);
       } break;
       case FRICMODE::SAFE: {
-        out_rpm_0_ = LowPass(0, motor_fric_0_->GetRPM());
-        out_rpm_1_ = LowPass(0, motor_fric_1_->GetRPM());
+        out_rpm_0_ = SoftTransition(0, motor_fric_0_->GetRPM());
+        out_rpm_1_ = SoftTransition(0, motor_fric_1_->GetRPM());
         /*防止震荡*/
         if (motor_fric_0_->GetRPM() < launcher::param::MIN_FRIC_RPM ||
             motor_fric_1_->GetRPM() < launcher::param::MIN_FRIC_RPM) {
@@ -297,6 +296,7 @@ class Launcher {
         break;
     }
   }
+  LibXR::Event &GetEvent() { return launcher_event_; }
 
  private:
   LauncherParam param_;
@@ -348,7 +348,7 @@ class Launcher {
     motor_trig_->CurrentControl(out);
   }
   /*指数缓变*/
-  float LowPass(float target, float cur) {
+  float SoftTransition(float target, float cur) {
     constexpr float TAU = 0.15f;
     float alpha = dt_ / (TAU + dt_);
     return cur + alpha * (target - cur);
