@@ -74,17 +74,12 @@ depends:
 
 namespace launcher::param {
 constexpr float TRIGSTEP = static_cast<float>(M_2PI) / 10;
-constexpr float HEAT_CHECK_TIME = 0.1;
-constexpr float CHECK_JAM_TIME = 0.02;
-constexpr float JAM_CURRENT = 8.0f;
-constexpr float SHOT_WINDOW = 0.004f;
 constexpr float MAX_FRIC_CUR = 2.0f;
 constexpr float MIN_FRIC_RPM = 200.0f;
 }  // namespace launcher::param
 
 class Launcher {
  public:
-
   enum class TRIGMODE : uint8_t { RELAX, SAFE, SINGLE, CONTINUE, JAM };
 
   enum class FRICMODE : uint8_t {
@@ -93,25 +88,12 @@ class Launcher {
     READY,
   };
 
-  typedef struct {
-    float heat_limit;
-    float heat_cooling;
-  } RefereeData;
   struct LauncherParam {
-    /*一级摩擦轮转速*/
     float fric_rpm_;
-    /*拨弹盘电机减速比*/
     float trig_gear_ratio;
     uint8_t num_trig_tooth;
     float trig_freq_;
   };
-  typedef struct {
-    float single_heat;
-    float launched_num;
-    float current_heat;
-    float heat_threshold;
-    bool allow_fire;
-  } HeatLimit;
   /**
    * @brief Launcher 构造函数
    *
@@ -131,7 +113,7 @@ class Launcher {
            LibXR::PID<float>::Param pid_param_fric_0,
            LibXR::PID<float>::Param pid_param_fric_1,
            RMMotor *motor_fric_front_left, RMMotor *motor_fric_front_right,
-           RMMotor *motor_trig, LauncherParam launch_param )
+           RMMotor *motor_trig, LauncherParam launch_param)
       : param_(launch_param),
         motor_fric_0_(motor_fric_front_left),
         motor_fric_1_(motor_fric_front_right),
@@ -203,11 +185,6 @@ class Launcher {
    *
    */
   void Update() {
-    /*获取数据*/
-    referee_data_.heat_limit = 260.0f;
-    referee_data_.heat_cooling = 30.0f;
-    heat_limit_.single_heat = 10.0f;
-    heat_limit_.heat_threshold = 200.0f;
 
     static float last_motor_angle = 0.0f;
     static bool initialized = false;
@@ -237,12 +214,10 @@ class Launcher {
   void FricControl() {
     switch (fric_mod_) {
       case FRICMODE::RELAX: {
-        ready_ = false;
         motor_fric_0_->CurrentControl(0);
         motor_fric_1_->CurrentControl(0);
       } break;
       case FRICMODE::SAFE: {
-        ready_ = false;
         out_rpm_0_ = LowPass(0, motor_fric_0_->GetRPM());
         out_rpm_1_ = LowPass(0, motor_fric_1_->GetRPM());
         /*防止震荡*/
@@ -325,8 +300,6 @@ class Launcher {
 
  private:
   LauncherParam param_;
-  RefereeData referee_data_;
-  HeatLimit heat_limit_;
   TRIGMODE last_trig_mod_ = TRIGMODE::RELAX;
   TRIGMODE trig_mod_ = TRIGMODE::RELAX;
   FRICMODE fric_mod_ = FRICMODE::RELAX;
@@ -361,7 +334,6 @@ class Launcher {
 
   float fric_out_left_ = 0.0f;
   float fric_out_right_ = 0.0f;
-  bool ready_ = false;
   float out_rpm_0_ = 0;
   float out_rpm_1_ = 0;
   /*---------------------工具函数--------------------------------------------------*/
