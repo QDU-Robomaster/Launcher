@@ -102,9 +102,7 @@ class Launcher {
     float fric_rpm_;
     /*拨弹盘电机减速比*/
     float trig_gear_ratio;
-    /*拨齿数目*/
     uint8_t num_trig_tooth;
-    /*弹频*/
     float trig_freq_;
   };
   typedef struct {
