@@ -133,7 +133,7 @@ class Launcher {
            LibXR::PID<float>::Param pid_param_fric_0,
            LibXR::PID<float>::Param pid_param_fric_1,
            RMMotor *motor_fric_front_left, RMMotor *motor_fric_front_right,
-           RMMotor *motor_trig, LauncherParam launch_param, )
+           RMMotor *motor_trig, LauncherParam launch_param )
       : param_(launch_param),
         motor_fric_0_(motor_fric_front_left),
         motor_fric_1_(motor_fric_front_right),
