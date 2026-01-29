@@ -61,7 +61,6 @@ depends:
 #include <initializer_list>
 
 #include "CMD.hpp"
-#include "Launcher.hpp"
 #include "RMMotor.hpp"
 #include "app_framework.hpp"
 #include "cycle_value.hpp"
