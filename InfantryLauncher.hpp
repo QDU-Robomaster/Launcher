@@ -123,7 +123,7 @@ class InfantryLauncher {
     UNUSED(motor_fric_back_right);
     UNUSED(cmd);
     thread_.Create(this, ThreadFunction, "LauncherThread", task_stack_depth,
-                   LibXR::Thread::Priority::MEDIUM);
+                   LibXR::Thread::Priority::HIGH);
     auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, InfantryLauncher *launcher, uint32_t event_id) {
           UNUSED(in_isr);
@@ -153,9 +153,13 @@ class InfantryLauncher {
   }
 
   static void ThreadFunction(InfantryLauncher *launcher) {
+
     LibXR::Topic::ASyncSubscriber<CMD::LauncherCMD> launcher_cmd_tp(
         "launcher_cmd");
     launcher_cmd_tp.StartWaiting();
+    auto now = LibXR::Timebase::GetMilliseconds();
+    launcher->dt_ = (now - launcher->last_online_time_).ToSecondf();
+    launcher->last_online_time_ = now;
 
     while (1) {
       launcher->Update();
@@ -215,9 +219,6 @@ class InfantryLauncher {
     }
   }
   void FricControl() {
-    auto now = LibXR::Timebase::GetMilliseconds();
-    this->dt_ = (now - this->last_online_time_).ToSecondf();
-    this->last_online_time_ = now;
 
     switch (fric_mod_) {
       case FRICMODE::RELAX: {
@@ -257,9 +258,6 @@ class InfantryLauncher {
 
   void SetTrig() {
     auto now = LibXR::Timebase::GetMilliseconds();
-    this->dt_ = (now - this->last_online_time_).ToSecondf();
-    this->last_online_time_ = now;
-
     switch (trig_mod_) {
       case TRIGMODE::RELAX:
         motor_trig_->CurrentControl(0);
