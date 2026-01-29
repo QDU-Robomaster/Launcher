@@ -127,13 +127,13 @@ class Launcher {
    * @param  num_trig_tooth_ 拨弹盘中一圈能存储几颗弹丸
    */
   Launcher(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
-           RMMotor *motor_fric_front_left, RMMotor *motor_fric_front_right,
-           RMMotor *motor_trig, uint32_t task_stack_depth,
+           uint32_t task_stack_depth, CMD *cmd,
            LibXR::PID<float>::Param pid_param_trig_angle,
            LibXR::PID<float>::Param pid_param_trig_speed,
            LibXR::PID<float>::Param pid_param_fric_0,
            LibXR::PID<float>::Param pid_param_fric_1,
-           LauncherParam launch_param, CMD *cmd)
+           RMMotor *motor_fric_front_left, RMMotor *motor_fric_front_right,
+           RMMotor *motor_trig, LauncherParam launch_param, )
       : param_(launch_param),
         motor_fric_0_(motor_fric_front_left),
         motor_fric_1_(motor_fric_front_right),
