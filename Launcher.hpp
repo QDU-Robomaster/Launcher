@@ -129,7 +129,7 @@ class Launcher : public LibXR::Application {
            LibXR::PID<float>::Param pid_param_trig_angle,
            LibXR::PID<float>::Param pid_param_trig_speed,
            LibXR::PID<float>::Param pid_param_fric_0,
-           LibXR::PID<float>::Param pid_param_fric_1,RMMotor *motor_fric_0,
+           LibXR::PID<float>::Param pid_param_fric_1, RMMotor *motor_fric_0,
            RMMotor *motor_fric_1, RMMotor *motor_trig,
            LauncherParam launch_param)
       : PARAM(launch_param),
@@ -260,8 +260,8 @@ class Launcher : public LibXR::Application {
     static TRIGMODE last_trig_mod = TRIGMODE::SAFE;
 
     if (last_trig_mod == TRIGMODE::SAFE && trig_mod_ == TRIGMODE::SINGLE) {
-        target_trig_angle_ = static_cast<float>(
-            M_2PI / PARAM.num_trig_tooth + trig_angle_);
+      target_trig_angle_ =
+          static_cast<float>(M_2PI / PARAM.num_trig_tooth + trig_angle_);
     }
 
     switch (trig_mod_) {
@@ -272,7 +272,7 @@ class Launcher : public LibXR::Application {
       case TRIGMODE::SINGLE: {
         TrigAngleControl(target_trig_angle_);
 
-          float angle_err = static_cast<float>(target_trig_angle_ - trig_angle_);
+        float angle_err = static_cast<float>(target_trig_angle_ - trig_angle_);
         if (std::fabs(angle_err) == 0.0f) {
           trig_mod_ = TRIGMODE::SAFE;
         }
@@ -283,8 +283,8 @@ class Launcher : public LibXR::Application {
         if (PARAM.trig_freq_ > 0.0f) {
           float trig_speed = 1.0f / PARAM.trig_freq_;
           if (since_last >= trig_speed) {
-              target_trig_angle_ += static_cast<float>(
-                  M_2PI / PARAM.num_trig_tooth);
+            target_trig_angle_ +=
+                static_cast<float>(M_2PI / PARAM.num_trig_tooth);
             last_trig_time_ = now;
           }
         }
@@ -343,7 +343,8 @@ class Launcher : public LibXR::Application {
 
   /*---------------------工具函数--------------------------------------------------*/
   void FricRPMControl(float output) {
-    float out_left = pid_fric_0_.Calculate(output, motor_fric_0_->GetRPM(), dt_);
+    float out_left =
+        pid_fric_0_.Calculate(output, motor_fric_0_->GetRPM(), dt_);
     float out_right =
         pid_fric_1_.Calculate(output, motor_fric_1_->GetRPM(), dt_);
     motor_fric_0_->CurrentControl(out_left);
@@ -353,11 +354,11 @@ class Launcher : public LibXR::Application {
   void TrigAngleControl(float target_angle) {
     float plate_omega_ref = pid_trig_angle_.Calculate(
         target_angle, trig_angle_,
-        motor_trig_->GetOmega() / PARAM.trig_gear_ratio,dt_);
+        motor_trig_->GetOmega() / PARAM.trig_gear_ratio, dt_);
 
     float motor_omega_ref = plate_omega_ref;
-    float out =
-      pid_trig_sp_.Calculate(motor_omega_ref, motor_trig_->GetOmega()/PARAM.trig_gear_ratio, dt_);
+    float out = pid_trig_sp_.Calculate(
+        motor_omega_ref, motor_trig_->GetOmega() / PARAM.trig_gear_ratio, dt_);
 
     motor_trig_->CurrentControl(out);
   }
