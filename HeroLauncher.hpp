@@ -108,10 +108,10 @@ class HeroLauncher {
     CONTINUE,
   };
 
-  enum class FRICMODE : uint8_t {
-    RELAX = 0,
-    SAFE ,
-    READY,
+  enum class LauncherEvent : uint8_t {
+    SET_FRICMODE_RELAX,
+    SET_FRICMODE_SAFE,
+    SET_FRICMODE_READY,
   };
 
   typedef struct {
@@ -264,14 +264,14 @@ class HeroLauncher {
     last_fire_notify_ = launcher_cmd_.isfire;
 
     switch (launcher_event_) {
-      case static_cast<uint32_t>(FRICMODE::SAFE):
+      case LauncherEvent::SET_FRICMODE_SAFE:
         fric_target_speed_[0] = 0;
         fric_target_speed_[1] = 0;
         fric_target_speed_[2] = 0;
         fric_target_speed_[3] = 0;
 
         break;
-      case static_cast<uint32_t>(FRICMODE::READY):
+      case LauncherEvent::SET_FRICMODE_READY:
 
         fric_target_speed_[0] = PARAM.fric2_setpoint_speed;
         fric_target_speed_[1] = PARAM.fric2_setpoint_speed;
@@ -404,7 +404,7 @@ class HeroLauncher {
   }
   void LostCtrl() {
     // 重置所有发射相关的状态变量到初始模式
-    launcher_event_ = static_cast<uint32_t>(FRICMODE::SAFE);
+    launcher_event_ = LauncherEvent::SET_FRICMODE_SAFE;
     trig_mod_ = TRIGMODE::RELAX;
 
     // 重置发射控制标志
@@ -446,7 +446,12 @@ class HeroLauncher {
     real_launch_delay_ = 0.0f;
   }
 
-  void SetMode(uint32_t mode) { launcher_event_ = mode; }
+  void SetMode(uint32_t mode) {
+    mutex_.Lock();
+    launcher_event_ = static_cast<LauncherEvent>(mode);
+    /*reset*/
+    mutex_.Unlock();
+  }
 
  private:
   const LauncherParam PARAM;
@@ -517,5 +522,5 @@ class HeroLauncher {
   LibXR::Thread thread_;
   LibXR::Semaphore semaphore_;
   LibXR::Mutex mutex_;
-  uint32_t launcher_event_;
+  LauncherEvent launcher_event_ = LauncherEvent::SET_FRICMODE_RELAX;
 };
