@@ -205,16 +205,13 @@ class HeroLauncher {
         "launcher_cmd");
     launcher_cmd_tp.StartWaiting();
     while (true) {
-      LibXR::MillisecondTimestamp last_time =
-          LibXR::Timebase::GetMilliseconds();
-
       HeroLauncher->mutex_.Lock();
       HeroLauncher->Update();
       HeroLauncher->HeatLimit();
       HeroLauncher->mutex_.Unlock();
       HeroLauncher->Control();
 
-      HeroLauncher->thread_.SleepUntil(last_time, 2);
+      HeroLauncher->thread_.Sleep(2);
     }
   }
 

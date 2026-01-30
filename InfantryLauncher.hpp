@@ -123,7 +123,7 @@ class InfantryLauncher {
     UNUSED(motor_fric_back_right);
     UNUSED(cmd);
     thread_.Create(this, ThreadFunction, "LauncherThread", task_stack_depth,
-                   LibXR::Thread::Priority::HIGH);
+                   LibXR::Thread::Priority::MEDIUM);
     auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, InfantryLauncher *launcher, uint32_t event_id) {
           UNUSED(in_isr);
