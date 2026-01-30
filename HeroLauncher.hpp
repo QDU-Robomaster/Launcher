@@ -78,7 +78,7 @@ depends:
 
 #include <algorithm>
 #include <cstdint>
-
+#include "Motor.hpp"
 #include "CMD.hpp"
 #include "RMMotor.hpp"
 #include "app_framework.hpp"
@@ -227,15 +227,20 @@ class HeroLauncher {
     this->dt_ = (now - this->last_wakeup_).ToSecondf();
     this->last_wakeup_ = now;
 
+    param_motor_fric_front_left_=motor_fric_front_left_->GetFeedback();
+    param_motor_fric_front_right_=motor_fric_front_right_->GetFeedback();
+    param_motor_fric_back_left_=motor_fric_back_left_->GetFeedback();
+    param_motor_fric_back_right_=motor_fric_back_right_->GetFeedback();
+   param_trig_= motor_trig_->GetFeedback();
     const float LAST_TRIG_MOTOR_ANGLE =
-        LibXR::CycleValue<float>(this->motor_trig_->GetAngle());
+        LibXR::CycleValue<float>(param_trig_.abs_angle);
     motor_fric_front_left_->Update();
     motor_fric_front_right_->Update();
     motor_fric_back_left_->Update();
     motor_fric_back_right_->Update();
     motor_trig_->Update();
     const float DELTA_MOTOR_ANGLE =
-        LibXR::CycleValue<float>(this->motor_trig_->GetAngle()) -
+        LibXR::CycleValue<float>(param_trig_.abs_angle) -
         LAST_TRIG_MOTOR_ANGLE;
     this->trig_angle_ += DELTA_MOTOR_ANGLE / PARAM.trig_gear_ratio;
   }
@@ -281,8 +286,8 @@ class HeroLauncher {
       default:
         break;
     }
-
-    current_back_left_ = motor_fric_back_left_->GetCurrent();
+/*电流cur=tor/K*/
+    current_back_left_ =param_motor_fric_back_left_.torque;
 
     if (first_loading_) {  // 首次发弹进行弹丸位置标定
       if (trig_mod_ == TRIGMODE::SINGLE) {
@@ -298,9 +303,9 @@ class HeroLauncher {
 
         delay_time_++;
       }
-
+      /*电流cur=tor/K*/
       if (delay_time_ > 50) {  // 延迟50个控制周期
-        if (std::abs(motor_fric_back_left_->GetCurrent()) > 5) {  // 发弹检测
+        if (std::abs(param_motor_fric_back_left_.torque ) > 5) {  // 发弹检测
           trig_zero_angle_ = trig_angle_;              // 获取电机当前位置
           trig_setpoint_angle_ = trig_angle_ - TRIG_ZERO_ANGLE_OFFSET;  // 偏移量
 
@@ -336,10 +341,10 @@ class HeroLauncher {
         enable_fire_ = false;
         start_fire_time_ = now_;
       }
-
+      /*电流cur=tor/K*/
       if (!mark_launch_) {  // 发弹状态检测
         {
-          if (std::abs(motor_fric_back_left_->GetCurrent()) > 5) {
+          if (std::abs(param_motor_fric_back_left_.torque) > 5) {
             fire_flag_ = false;
 
             fired_++;
@@ -354,27 +359,23 @@ class HeroLauncher {
     real_launch_delay_ = (finish_fire_time_ - start_fire_time_).ToSecondf();
 
     fric_output_[0] = fric_speed_pid_[0].Calculate(
-        fric_target_speed_[0], motor_fric_front_left_->GetRPM(), dt_);
+        fric_target_speed_[0], param_motor_fric_front_left_.velocity, dt_);
     fric_output_[1] = fric_speed_pid_[1].Calculate(
-        fric_target_speed_[1], motor_fric_front_right_->GetRPM(), dt_);
+        fric_target_speed_[1],param_motor_fric_front_right_.velocity, dt_);
     fric_output_[2] = fric_speed_pid_[2].Calculate(
-        fric_target_speed_[2], motor_fric_back_left_->GetRPM(), dt_);
+        fric_target_speed_[2], param_motor_fric_back_left_.velocity, dt_);
     fric_output_[3] = fric_speed_pid_[3].Calculate(
-        fric_target_speed_[3], motor_fric_back_right_->GetRPM(), dt_);
+        fric_target_speed_[3], param_motor_fric_back_right_.velocity, dt_);
 
-    motor_fric_front_left_->CurrentControl(fric_output_[0]);
-    motor_fric_front_right_->CurrentControl(fric_output_[1]);
-    motor_fric_back_left_->CurrentControl(fric_output_[2]);
-    motor_fric_back_right_->CurrentControl(fric_output_[3]);
-
+/*control给删了，过编译就行*/
     trig_setpoint_speed_ =
         trig_angle_pid_.Calculate(trig_setpoint_angle_, trig_angle_, dt_);
 
     trig_output_ = trig_speed_pid_.Calculate(trig_setpoint_speed_,
-                                             motor_trig_->GetRPM(), dt_);
+                                             param_trig_.velocity, dt_);
     switch (trig_mod_) {
       case TRIGMODE::RELAX:
-        trig_output_ = 0.0f;
+      cmd_trig_.velocity=0;
         break;
       case TRIGMODE::SAFE:
       case TRIGMODE::SINGLE:
@@ -382,7 +383,7 @@ class HeroLauncher {
       default:
         break;
     }
-    motor_trig_->CurrentControl(trig_output_);
+    motor_trig_->Control(cmd_trig_);
   }
   void HeatLimit() {
     heat_ctrl_.heat_limit = referee_data_.heat_limit;
@@ -523,4 +524,15 @@ class HeroLauncher {
   LibXR::Semaphore semaphore_;
   LibXR::Mutex mutex_;
   LauncherEvent launcher_event_ = LauncherEvent::SET_FRICMODE_RELAX;
+
+  Motor::Feedback param_motor_fric_front_left_;
+  Motor::Feedback param_motor_fric_front_right_;
+  Motor::Feedback param_motor_fric_back_left_;
+  Motor::Feedback param_motor_fric_back_right_;
+  Motor::Feedback param_trig_;
+  Motor::MotorCmd cmd_fric_front_left_;
+  Motor::MotorCmd cmd_fric_front_right_;
+  Motor::MotorCmd cmd_fric_back_left_;
+  Motor::MotorCmd cmd_fric_back_right_;
+  Motor::MotorCmd cmd_trig_;
 };

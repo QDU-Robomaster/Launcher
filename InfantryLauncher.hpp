@@ -334,6 +334,8 @@ class InfantryLauncher {
 
     switch (launcherstate_) {
       case LauncherState::STOP:
+      trig_mod_ = TRIGMODE::SAFE;
+      break;
       case LauncherState::OVERHEAT:
         trig_mod_ = TRIGMODE::RELAX;
         break;

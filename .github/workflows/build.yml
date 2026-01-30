@@ -65,6 +65,13 @@ jobs:
           repository: QDU-Robomaster/RMMotor
           path: Modules/RMMotor
 
+      - name: Checkout Motor module
+        uses: actions/checkout@v4
+        with:
+          repository: QDU-Robomaster/Motor
+          path: Modules/Motor
+
+
       - name: Setup Python & Install deps
         run: |
           python3 -m pip install --upgrade pip
