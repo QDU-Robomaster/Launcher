@@ -70,7 +70,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: QDU-Robomaster/RMMotor
-          ref: e0eb3ac
+          ref: dev
           path: Modules/RMMotor
 
       - name: Setup Python & Install deps
