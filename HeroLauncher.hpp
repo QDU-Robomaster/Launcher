@@ -100,6 +100,7 @@ depends:
 #define TRIG_LOADING_ANGLE_STEP (static_cast<float>(M_2PI) / 1002.0f)  // 首次发弹标定的角度步长
 
 class HeroLauncher {
+  /*只需要保留LauncherEvent的有关内容，其他修改回退*/
  public:
   enum class TRIGMODE : uint8_t {
     RELAX = 0,
