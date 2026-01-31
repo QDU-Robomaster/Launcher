@@ -87,19 +87,13 @@ depends:
 #include "libxr_def.hpp"
 #include "pid.hpp"
 
-enum class LauncherEvent : uint8_t {
-  SET_MODE_RELAX,
-  SET_MODE_SAFE,
-  SET_MODE_READY,
-};
 
 template <class LauncherType>
 class Launcher : public LibXR::Application {
  public:
+  using LauncherEvent = typename LauncherType::LauncherEvent;
   struct LauncherParam {
-    /*一级摩擦轮转速*/
     float fric1_setpoint_speed;
-    /*二级摩擦轮转速*/
     float fric2_setpoint_speed;
     float trig_gear_ratio;
     uint8_t num_trig_tooth;
@@ -139,11 +133,11 @@ class Launcher : public LibXR::Application {
         },
         this);
      launcher_event_.Register(
-        static_cast<uint32_t>(LauncherEvent::SET_MODE_RELAX), callback);
+        static_cast<uint32_t>(LauncherEvent::SET_FRICMODE_RELAX), callback);
     launcher_event_.Register(
-        static_cast<uint32_t>(LauncherEvent::SET_MODE_SAFE), callback);
+        static_cast<uint32_t>(LauncherEvent::SET_FRICMODE_SAFE), callback);
     launcher_event_.Register(
-        static_cast<uint32_t>(LauncherEvent::SET_MODE_READY), callback);
+        static_cast<uint32_t>(LauncherEvent::SET_FRICMODE_READY), callback);
   }
 
   /**
