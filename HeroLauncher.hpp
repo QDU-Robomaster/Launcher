@@ -223,6 +223,11 @@ class HeroLauncher {
     auto now = LibXR::Timebase::GetMicroseconds();
     this->dt_ = (now - this->last_wakeup_).ToSecondf();
     this->last_wakeup_ = now;
+    motor_fric_front_left_->Update();
+    motor_fric_front_right_->Update();
+    motor_fric_back_left_->Update();
+    motor_fric_back_right_->Update();
+    motor_trig_->Update();
 
     param_motor_fric_front_left_=motor_fric_front_left_->GetFeedback();
     param_motor_fric_front_right_=motor_fric_front_right_->GetFeedback();
@@ -231,11 +236,6 @@ class HeroLauncher {
    param_trig_= motor_trig_->GetFeedback();
     const float LAST_TRIG_MOTOR_ANGLE =
         LibXR::CycleValue<float>(param_trig_.abs_angle);
-    motor_fric_front_left_->Update();
-    motor_fric_front_right_->Update();
-    motor_fric_back_left_->Update();
-    motor_fric_back_right_->Update();
-    motor_trig_->Update();
     const float DELTA_MOTOR_ANGLE =
         LibXR::CycleValue<float>(param_trig_.abs_angle) -
         LAST_TRIG_MOTOR_ANGLE;
@@ -531,9 +531,21 @@ class HeroLauncher {
   Motor::Feedback param_motor_fric_back_left_;
   Motor::Feedback param_motor_fric_back_right_;
   Motor::Feedback param_trig_;
-  Motor::MotorCmd cmd_fric_front_left_;
-  Motor::MotorCmd cmd_fric_front_right_;
-  Motor::MotorCmd cmd_fric_back_left_;
-  Motor::MotorCmd cmd_fric_back_right_;
+  Motor::MotorCmd cmd_fric_front_left_ =
+      Motor::MotorCmd{.mode = Motor::ControlMode::MODE_CURRENT,
+                      .reduction_ratio = 19.0f,
+                      .velocity = 0};
+  Motor::MotorCmd cmd_fric_front_right_ =
+      Motor::MotorCmd{.mode = Motor::ControlMode::MODE_CURRENT,
+                      .reduction_ratio = 19.0f,
+                      .velocity = 0};
+  Motor::MotorCmd cmd_fric_back_left_ =
+      Motor::MotorCmd{.mode = Motor::ControlMode::MODE_CURRENT,
+                      .reduction_ratio = 19.0f,
+                      .velocity = 0};
+  Motor::MotorCmd cmd_fric_back_right_ =
+      Motor::MotorCmd{.mode = Motor::ControlMode::MODE_CURRENT,
+                      .reduction_ratio = 19.0f,
+                      .velocity = 0};
   Motor::MotorCmd cmd_trig_;
 };

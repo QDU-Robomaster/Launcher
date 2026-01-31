@@ -10,6 +10,7 @@ depends: []
 === END MANIFEST === */
 // clang-format on
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <initializer_list>
@@ -124,7 +125,8 @@ class InfantryLauncher {
     UNUSED(motor_fric_back_right);
     UNUSED(cmd);
     thread_.Create(this, ThreadFunction, "LauncherThread", task_stack_depth,
-                   LibXR::Thread::Priority::HIGH);
+                   LibXR::Thread::Priority::MEDIUM);
+
     auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, InfantryLauncher *launcher, uint32_t event_id) {
           UNUSED(in_isr);
@@ -179,20 +181,16 @@ class InfantryLauncher {
     heat_limit_.single_heat = 10.0f;
     heat_limit_.heat_threshold = 200.0f;
 
+    motor_fric_0_->Update();
+    motor_fric_1_->Update();
+    motor_trig_->Update();
+
     param_frirc_0_ = motor_fric_0_->GetFeedback();
     param_frirc_1_ = motor_fric_1_->GetFeedback();
     param_trig_ = motor_trig_->GetFeedback();
 
-    cmd_trig_.mode = Motor::ControlMode::MODE_CURRENT;
-    cmd_fric_0_.mode = Motor::ControlMode::MODE_CURRENT;
-    cmd_fric_1_.mode = Motor::ControlMode::MODE_CURRENT;
-
     static float last_motor_angle = 0.0f;
     static bool initialized = false;
-
-    motor_fric_0_->Update();
-    motor_fric_1_->Update();
-    motor_trig_->Update();
 
     float current_motor_angle = param_trig_.position;
 
@@ -259,6 +257,7 @@ class InfantryLauncher {
 
   void SetTrig() {
     auto now = LibXR::Timebase::GetMilliseconds();
+
     switch (trig_mod_) {
       case TRIGMODE::RELAX:
         motor_trig_->Relax();
@@ -334,10 +333,10 @@ class InfantryLauncher {
 
     switch (launcherstate_) {
       case LauncherState::STOP:
-      trig_mod_ = TRIGMODE::SAFE;
-      break;
-      case LauncherState::OVERHEAT:
         trig_mod_ = TRIGMODE::RELAX;
+        break;
+      case LauncherState::OVERHEAT:
+        trig_mod_ = TRIGMODE::SAFE;
         break;
       case LauncherState::NORMAL:
 
@@ -365,56 +364,44 @@ class InfantryLauncher {
     UpdateShotJudge();
     last_fire_notify_ = launcher_cmd_.isfire;
   }
-
   void Heat() {
     auto now = LibXR::Timebase::GetMilliseconds();
-
     float delta_time = (now - last_heat_time_).ToSecondf();
-    if (delta_time >= 0.1) {
-      /*每周期都计算此周期的剩余热量*/
-      last_heat_time_ = now;
-      heat_limit_.current_heat +=
-          heat_limit_.single_heat * heat_limit_.launched_num;
-      heat_limit_.launched_num = 0;
 
-      if (heat_limit_.current_heat <
-          (static_cast<float>(referee_data_.heat_cooling / 10.0))) {
-        heat_limit_.current_heat = 0;
-      } else {
-        heat_limit_.current_heat -=
-            static_cast<float>(referee_data_.heat_cooling / 10.0);
-      }
+    if (delta_time < 0.01f) {
+      return;
+    }
+    last_heat_time_ = now;
 
-      float residuary_heat =
-          referee_data_.heat_limit - heat_limit_.current_heat;
+    /* 1. 计算热量变化 */
+    float heat_in = heat_limit_.single_heat * heat_limit_.launched_num;
+    float heat_out = referee_data_.heat_cooling * delta_time;
 
-      /*控制control里的launcherstate*/
-      if (residuary_heat >= heat_limit_.single_heat) {
-        heat_limit_.allow_fire = true;
-      } else {
-        heat_limit_.allow_fire = false;
-      }
+    heat_limit_.launched_num = 0;
 
-      /*不同剩余热量启用不同实际弹频*/
-      if (heat_limit_.allow_fire) {
-        if (residuary_heat <= heat_limit_.single_heat + 0.001) {
-          trig_freq_ = referee_data_.heat_cooling / heat_limit_.single_heat;
-        } else if (residuary_heat <=
-                   heat_limit_.single_heat * heat_limit_.heat_threshold) {
-          float ratio = (residuary_heat - heat_limit_.single_heat) /
-                        (heat_limit_.single_heat * heat_limit_.heat_threshold -
-                         heat_limit_.single_heat);
+    heat_limit_.current_heat += heat_in;
+    heat_limit_.current_heat =
+        std::max(0.0f, heat_limit_.current_heat - heat_out);
 
-          ratio = std::max(0.0f, std::min(1.0f, ratio));
-          /*计算实际发射频率*/
-          float safe_freq =
-              referee_data_.heat_cooling / heat_limit_.single_heat;
-          trig_freq_ =
-              ratio * param_.expect_trig_freq_ + (1.0f - ratio) * safe_freq;
-        } else {
-          trig_freq_ = param_.expect_trig_freq_;
-        }
-      }
+    /* 2. 剩余热量 */
+    float residuary_heat = referee_data_.heat_limit - heat_limit_.current_heat;
+
+    /* 3. 是否允许开火 */
+    heat_limit_.allow_fire = residuary_heat >= heat_limit_.single_heat;
+
+    /* 4. 计算最大“物理安全弹频” */
+    float max_safe_freq = referee_data_.heat_cooling / heat_limit_.single_heat;
+
+    /* 5. 根据剩余热量做比例限幅 */
+    float heat_ratio = residuary_heat / referee_data_.heat_limit;
+    heat_ratio = std::clamp(heat_ratio, 0.0f, 1.0f);
+
+    /* 6. 最终弹频 */
+    if (heat_limit_.allow_fire) {
+      trig_freq_ =
+          std::min(param_.expect_trig_freq_, max_safe_freq * heat_ratio);
+    } else {
+      trig_freq_ = 0.0f;
     }
   }
 
@@ -509,9 +496,18 @@ class InfantryLauncher {
   Motor::Feedback param_frirc_0_;
   Motor::Feedback param_frirc_1_;
   Motor::Feedback param_trig_;
-  Motor::MotorCmd cmd_fric_0_;
-  Motor::MotorCmd cmd_fric_1_;
-  Motor::MotorCmd cmd_trig_;
+  Motor::MotorCmd cmd_fric_0_ =
+      Motor::MotorCmd{.mode = Motor::ControlMode::MODE_CURRENT,
+                      .reduction_ratio = 19.0f,
+                      .velocity = 0};
+  Motor::MotorCmd cmd_fric_1_ =
+      Motor::MotorCmd{.mode = Motor::ControlMode::MODE_CURRENT,
+                      .reduction_ratio = 19.0f,
+                      .velocity = 0};
+  Motor::MotorCmd cmd_trig_ =
+      Motor::MotorCmd{.mode = Motor::ControlMode::MODE_CURRENT,
+                      .reduction_ratio = 36.0f,
+                      .velocity = 0};
 
   float fric_out_left_ = 0.0f;
   float fric_out_right_ = 0.0f;
