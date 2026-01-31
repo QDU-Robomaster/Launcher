@@ -78,8 +78,9 @@ depends:
 
 #include <algorithm>
 #include <cstdint>
-#include "Motor.hpp"
+
 #include "CMD.hpp"
+#include "Motor.hpp"
 #include "RMMotor.hpp"
 #include "app_framework.hpp"
 #include "cycle_value.hpp"
@@ -96,8 +97,10 @@ depends:
 #include "timebase.hpp"
 #include "uart.hpp"
 
+
 #define TRIG_ZERO_ANGLE_OFFSET (0.25f)  // 拨弹盘零点偏移角度
-#define TRIG_LOADING_ANGLE_STEP (static_cast<float>(M_2PI) / 1002.0f)  // 首次发弹标定的角度步长
+#define TRIG_LOADING_ANGLE_STEP \
+  (static_cast<float>(M_2PI) / 1002.0f)  // 首次发弹标定的角度步长
 
 class HeroLauncher {
   /*只需要保留LauncherEvent的有关内容，其他修改回退*/
@@ -108,7 +111,6 @@ class HeroLauncher {
     SINGLE,
     CONTINUE,
   };
-
 
   enum class LauncherEvent : uint8_t {
     SET_FRICMODE_RELAX,
@@ -206,8 +208,7 @@ class HeroLauncher {
         "launcher_cmd");
     launcher_cmd_tp.StartWaiting();
     while (true) {
-      LibXR::MillisecondTimestamp last_time =
-          LibXR::Timebase::GetMilliseconds();
+      auto last_time = LibXR::Timebase::GetMilliseconds();
 
       HeroLauncher->mutex_.Lock();
       HeroLauncher->Update();
@@ -229,16 +230,15 @@ class HeroLauncher {
     motor_fric_back_right_->Update();
     motor_trig_->Update();
 
-    param_motor_fric_front_left_=motor_fric_front_left_->GetFeedback();
-    param_motor_fric_front_right_=motor_fric_front_right_->GetFeedback();
-    param_motor_fric_back_left_=motor_fric_back_left_->GetFeedback();
-    param_motor_fric_back_right_=motor_fric_back_right_->GetFeedback();
-   param_trig_= motor_trig_->GetFeedback();
+    param_motor_fric_front_left_ = motor_fric_front_left_->GetFeedback();
+    param_motor_fric_front_right_ = motor_fric_front_right_->GetFeedback();
+    param_motor_fric_back_left_ = motor_fric_back_left_->GetFeedback();
+    param_motor_fric_back_right_ = motor_fric_back_right_->GetFeedback();
+    param_trig_ = motor_trig_->GetFeedback();
     const float LAST_TRIG_MOTOR_ANGLE =
         LibXR::CycleValue<float>(param_trig_.abs_angle);
     const float DELTA_MOTOR_ANGLE =
-        LibXR::CycleValue<float>(param_trig_.abs_angle) -
-        LAST_TRIG_MOTOR_ANGLE;
+        LibXR::CycleValue<float>(param_trig_.abs_angle) - LAST_TRIG_MOTOR_ANGLE;
     this->trig_angle_ += DELTA_MOTOR_ANGLE / PARAM.trig_gear_ratio;
   }
 
@@ -246,7 +246,7 @@ class HeroLauncher {
     LibXR::MillisecondTimestamp now_time = LibXR::Timebase::GetMilliseconds();
 
     now_ = LibXR::Timebase::GetMilliseconds();
-    if (launcher_event_!= LauncherEvent::SET_FRICMODE_RELAX) {
+    if (launcher_event_ != LauncherEvent::SET_FRICMODE_RELAX) {
       if (launcher_cmd_.isfire && !last_fire_notify_) {  // 拨弹盘模式设定
         fire_press_time_ = now_time;
         press_continue_ = false;
@@ -269,7 +269,6 @@ class HeroLauncher {
     last_fire_notify_ = launcher_cmd_.isfire;
 
     switch (launcher_event_) {
-
       case LauncherEvent::SET_FRICMODE_SAFE:
         fric_target_speed_[0] = 0;
         fric_target_speed_[1] = 0;
@@ -287,8 +286,8 @@ class HeroLauncher {
       default:
         break;
     }
-/*电流cur=tor/K*/
-    current_back_left_ =param_motor_fric_back_left_.torque;
+    /*电流cur=tor/K*/
+    current_back_left_ = param_motor_fric_back_left_.torque;
 
     if (first_loading_) {  // 首次发弹进行弹丸位置标定
       if (trig_mod_ == TRIGMODE::SINGLE) {
@@ -306,9 +305,10 @@ class HeroLauncher {
       }
       /*电流cur=tor/K*/
       if (delay_time_ > 50) {  // 延迟50个控制周期
-        if (std::abs(param_motor_fric_back_left_.torque ) > 5) {  // 发弹检测
-          trig_zero_angle_ = trig_angle_;              // 获取电机当前位置
-          trig_setpoint_angle_ = trig_angle_ - TRIG_ZERO_ANGLE_OFFSET;  // 偏移量
+        if (std::abs(param_motor_fric_back_left_.torque) > 5) {  // 发弹检测
+          trig_zero_angle_ = trig_angle_;  // 获取电机当前位置
+          trig_setpoint_angle_ =
+              trig_angle_ - TRIG_ZERO_ANGLE_OFFSET;  // 偏移量
 
           fire_flag_ = false;
           first_loading_ = false;
@@ -362,13 +362,13 @@ class HeroLauncher {
     fric_output_[0] = fric_speed_pid_[0].Calculate(
         fric_target_speed_[0], param_motor_fric_front_left_.velocity, dt_);
     fric_output_[1] = fric_speed_pid_[1].Calculate(
-        fric_target_speed_[1],param_motor_fric_front_right_.velocity, dt_);
+        fric_target_speed_[1], param_motor_fric_front_right_.velocity, dt_);
     fric_output_[2] = fric_speed_pid_[2].Calculate(
         fric_target_speed_[2], param_motor_fric_back_left_.velocity, dt_);
     fric_output_[3] = fric_speed_pid_[3].Calculate(
         fric_target_speed_[3], param_motor_fric_back_right_.velocity, dt_);
 
-/*control给删了，过编译就行*/
+    /*control给删了，过编译就行*/
     trig_setpoint_speed_ =
         trig_angle_pid_.Calculate(trig_setpoint_angle_, trig_angle_, dt_);
 
@@ -376,7 +376,7 @@ class HeroLauncher {
                                              param_trig_.velocity, dt_);
     switch (trig_mod_) {
       case TRIGMODE::RELAX:
-      cmd_trig_.velocity=0;
+        cmd_trig_.velocity = 0;
         break;
       case TRIGMODE::SAFE:
       case TRIGMODE::SINGLE:

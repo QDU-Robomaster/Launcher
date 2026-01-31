@@ -160,16 +160,13 @@ class InfantryLauncher {
     launcher_cmd_tp.StartWaiting();
 
     while (1) {
-      auto now = LibXR::Timebase::GetMilliseconds();
-      launcher->dt_ = (now - launcher->last_online_time_).ToSecondf();
-      launcher->last_online_time_ = now;
-
+      auto last_time = LibXR::Timebase::GetMilliseconds();
       launcher->Update();
       launcher->Heat();
       launcher->FricControl();
       launcher->Control();
 
-      LibXR::Thread::Sleep(2);
+      LibXR::Thread::SleepUntil(last_time,2);
     }
   }
   /**
