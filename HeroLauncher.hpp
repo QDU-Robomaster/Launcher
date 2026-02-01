@@ -101,6 +101,7 @@ depends:
 #define TRIG_ZERO_ANGLE_OFFSET (0.25f)  // 拨弹盘零点偏移角度
 #define TRIG_LOADING_ANGLE_STEP \
   (static_cast<float>(M_2PI) / 1002.0f)  // 首次发弹标定的角度步长
+#define M3508_K 0.3f
 
 class HeroLauncher {
   /*只需要保留LauncherEvent的有关内容，其他修改回退*/
@@ -225,6 +226,9 @@ class HeroLauncher {
     auto now = LibXR::Timebase::GetMicroseconds();
     this->dt_ = (now - this->last_wakeup_).ToSecondf();
     this->last_wakeup_ = now;
+
+    const float LAST_TRIG_MOTOR_ANGLE = LibXR::CycleValue<float>(param_trig_.abs_angle);
+
     motor_fric_front_left_->Update();
     motor_fric_front_right_->Update();
     motor_fric_back_left_->Update();
@@ -236,8 +240,6 @@ class HeroLauncher {
     param_motor_fric_back_left_ = motor_fric_back_left_->GetFeedback();
     param_motor_fric_back_right_ = motor_fric_back_right_->GetFeedback();
     param_trig_ = motor_trig_->GetFeedback();
-    const float LAST_TRIG_MOTOR_ANGLE =
-        LibXR::CycleValue<float>(param_trig_.abs_angle);
     const float DELTA_MOTOR_ANGLE =
         LibXR::CycleValue<float>(param_trig_.abs_angle) - LAST_TRIG_MOTOR_ANGLE;
     this->trig_angle_ += DELTA_MOTOR_ANGLE / PARAM.trig_gear_ratio;
@@ -307,7 +309,7 @@ class HeroLauncher {
       }
       /*电流cur=tor/K*/
       if (delay_time_ > 50) {  // 延迟50个控制周期
-        if (std::abs(param_motor_fric_back_left_.torque) > 1) {  // 发弹检测
+        if (std::abs(param_motor_fric_back_left_.torque) / M3508_K > 1) {  // 发弹检测
           trig_zero_angle_ = trig_angle_;  // 获取电机当前位置
           trig_setpoint_angle_ =
               trig_angle_ - TRIG_ZERO_ANGLE_OFFSET;  // 偏移量
@@ -392,6 +394,7 @@ class HeroLauncher {
       case TRIGMODE::SAFE:
       case TRIGMODE::SINGLE:
       case TRIGMODE::CONTINUE:
+        cmd_trig_.velocity = trig_output_;
       default:
         break;
     }
