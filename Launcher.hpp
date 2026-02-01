@@ -9,19 +9,19 @@ constructor_args:
   - motor_fric_back_left: '@&motor_fric_back_left'
   - motor_fric_back_right: '@&motor_fric_back_right'
   - motor_trig: '@&motor_trig'
-  - task_stack_depth: 4096
+  - task_stack_depth: 2048
   - pid_trig_angle:
       k: 1.0
-      p: 4000.0
+      p: 35.0
       i: 0.0
       d: 0.0
       i_limit: 0.0
-      out_limit: 4000.0
+      out_limit: 10.0
       cycle: false
   - pid_trig_speed:
       k: 1.0
-      p: 0.0012
-      i: 0.0005
+      p: 0.04
+      i: 0.04
       d: 0.0
       i_limit: 1.0
       out_limit: 1.0
@@ -44,7 +44,7 @@ constructor_args:
       cycle: false
   - pid_fric_speed_2:
       k: 1.0
-      p: 0.002
+      p: 0.00
       i: 0.0
       d: 0.0
       i_limit: 0.0
@@ -52,21 +52,21 @@ constructor_args:
       cycle: false
   - pid_fric_speed_3:
       k: 1.0
-      p: 0.002
+      p: 0.00
       i: 0.0
       d: 0.0
       i_limit: 0.0
       out_limit: 1.0
       cycle: false
   - launcher_param:
-      fric1_setpoint_speed: 4950.0
-      fric2_setpoint_speed: 3820.0
-      trig_gear_ratio: 19.2032
-      num_trig_tooth: 6
+      fric1_setpoint_speed: 600.0
+      fric2_setpoint_speed: 0.0
+      trig_gear_ratio: 36.0
+      num_trig_tooth: 10
       trig_freq_: 0.0
   - cmd: '@&cmd'
 template_args:
-  - LauncherType: HeroLauncher
+  - LauncherType: InfantryLauncher
 required_hardware:
   - dr16
   - can

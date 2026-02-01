@@ -34,6 +34,7 @@ constexpr float TRIGSTEP = static_cast<float>(M_2PI) / 10;
 }  // namespace launcher::param
 
 class InfantryLauncher {
+  /* pid修改建议：改弹频的同时吧pid_trig_angle的out_limit修改为和弹频差不多，这样实际弹频就会接近理想弹频*/
  public:
   enum class LauncherState : uint8_t {
     STOP,
@@ -171,10 +172,6 @@ class InfantryLauncher {
    *
    */
   void Update() {
-    referee_data_.heat_limit = 260.0f;
-    referee_data_.heat_cooling = 30.0f;
-    heat_limit_.single_heat = 10.0f;
-    heat_limit_.heat_threshold = 200.0f;
 
     static float last_motor_angle = 0.0f;
     static bool initialized = false;
@@ -243,7 +240,6 @@ if (fric_mod_ != FRICMODE::READY) {
       default:
         break;
     }
-    last_fric_mod_ = fric_mod_;
   }
 
   void SetTrig() {
@@ -343,12 +339,9 @@ if (fric_mod_ != FRICMODE::READY) {
  private:
   LauncherState launcherstate_ = LauncherState::STOP;
   LauncherParam param_;
-  RefereeData referee_data_;
-  HeatLimit heat_limit_;
   TRIGMODE last_trig_mod_ = TRIGMODE::RELAX;
   TRIGMODE trig_mod_ = TRIGMODE::RELAX;
   FRICMODE fric_mod_ = FRICMODE::RELAX;
-  FRICMODE last_fric_mod_ = FRICMODE::RELAX;
 
   float target_trig_angle_ = 0.0f;
   float trig_angle_ = 0.0f;
@@ -379,12 +372,6 @@ if (fric_mod_ != FRICMODE::READY) {
   LibXR::Semaphore semaphore_;
   LibXR::Mutex mutex_;
   uint32_t launcher_event_;
-  struct ShotJudge {
-    bool active = false;
-    float t = 0.0f;
-  };
-
-  ShotJudge shot_;
 
   float fric_out_left_ = 0.0f;
   float fric_out_right_ = 0.0f;
