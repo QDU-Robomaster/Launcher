@@ -31,9 +31,6 @@ depends: []
 
 namespace launcher::param {
 constexpr float TRIGSTEP = static_cast<float>(M_2PI) / 10;
-constexpr float JAM_CURRENT = 5.0f;
-constexpr float SHOT_WINDOW = 0.004f;  // 20 ms
-constexpr float DELTA_RPM = 50.0f;     // rpm
 }  // namespace launcher::param
 
 class InfantryLauncher {
@@ -67,7 +64,7 @@ class InfantryLauncher {
     /*拨齿数目*/
     uint8_t num_trig_tooth;
     /*弹频*/
-    float expect_trig_freq_;
+    float trig_freq_;
   };
   typedef struct {
     float single_heat;
@@ -157,13 +154,12 @@ class InfantryLauncher {
     LibXR::Topic::ASyncSubscriber<CMD::LauncherCMD> launcher_cmd_tp(
         "launcher_cmd");
     launcher_cmd_tp.StartWaiting();
-    auto now = LibXR::Timebase::GetMilliseconds();
-    launcher->dt_ = (now - launcher->last_online_time_).ToSecondf();
-    launcher->last_online_time_ = now;
-
     while (1) {
+      auto now = LibXR::Timebase::GetMilliseconds();
+      launcher->dt_ = (now - launcher->last_online_time_).ToSecondf();
+      launcher->last_online_time_ = now;
+
       launcher->Update();
-      launcher->Heat();
       launcher->FricControl();
       launcher->Control();
 
@@ -204,13 +200,7 @@ class InfantryLauncher {
       trig_angle_ -= delta_trig_angle / param_.trig_gear_ratio;
     }
     last_motor_angle = current_motor_angle;
-
-    if (fabs(motor_trig_->GetOmega()) < 0.5f &&
-        fabs(motor_trig_->GetCurrent()) > launcher::param::JAM_CURRENT) {
-      launcherstate_ = LauncherState::JAMMED;
-    } else if (!heat_limit_.allow_fire) {
-      launcherstate_ = LauncherState::OVERHEAT;
-    } else if (fric_mod_ != FRICMODE::READY) {
+if (fric_mod_ != FRICMODE::READY) {
       launcherstate_ = LauncherState::STOP;
     } else if (launcher_cmd_.isfire) {
       launcherstate_ = LauncherState::NORMAL;
@@ -270,16 +260,13 @@ class InfantryLauncher {
           target_trig_angle_ += launcher::param::TRIGSTEP;
         }
         TrigAngleControl(target_trig_angle_);
-        if (target_trig_angle_ > last_trig_angle_) {
-          BeginShotJudge();
-        }
         last_trig_angle_ = target_trig_angle_;
       } break;
 
       case TRIGMODE::CONTINUE: {
         float since_last = (now - last_trig_time_).ToSecondf();
-        if (trig_freq_ > 0.0f) {
-          float trig_speed = 1.0f / trig_freq_;
+        if (param_.trig_freq_ > 0.0f) {
+          float trig_speed = 1.0f / param_.trig_freq_;
           if (since_last >= trig_speed) {
             target_trig_angle_ = target_trig_angle_ + launcher::param::TRIGSTEP;
             last_trig_time_ = now;
@@ -287,9 +274,6 @@ class InfantryLauncher {
         }
         TrigAngleControl(target_trig_angle_);
 
-        if (target_trig_angle_ > last_trig_angle_) {
-          BeginShotJudge();
-        }
         last_trig_angle_ = target_trig_angle_;
       } break;
       case TRIGMODE::JAM: {
@@ -350,62 +334,9 @@ class InfantryLauncher {
       default:
         break;
     }
-    /*判断是否成功发射*/
-    UpdateShotJudge();
     last_fire_notify_ = launcher_cmd_.isfire;
   }
 
-  void Heat() {
-    auto now = LibXR::Timebase::GetMilliseconds();
-
-    float delta_time = (now - last_heat_time_).ToSecondf();
-    if (delta_time >= 0.1) {
-      /*每周期都计算此周期的剩余热量*/
-      last_heat_time_ = now;
-      heat_limit_.current_heat +=
-          heat_limit_.single_heat * heat_limit_.launched_num;
-      heat_limit_.launched_num = 0;
-
-      if (heat_limit_.current_heat <
-          (static_cast<float>(referee_data_.heat_cooling / 10.0))) {
-        heat_limit_.current_heat = 0;
-      } else {
-        heat_limit_.current_heat -=
-            static_cast<float>(referee_data_.heat_cooling / 10.0);
-      }
-
-      float residuary_heat =
-          referee_data_.heat_limit - heat_limit_.current_heat;
-
-      /*控制control里的launcherstate*/
-      if (residuary_heat >= heat_limit_.single_heat) {
-        heat_limit_.allow_fire = true;
-      } else {
-        heat_limit_.allow_fire = false;
-      }
-
-      /*不同剩余热量启用不同实际弹频*/
-      if (heat_limit_.allow_fire) {
-        if (residuary_heat <= heat_limit_.single_heat + 0.001) {
-          trig_freq_ = referee_data_.heat_cooling / heat_limit_.single_heat;
-        } else if (residuary_heat <=
-                   heat_limit_.single_heat * heat_limit_.heat_threshold) {
-          float ratio = (residuary_heat - heat_limit_.single_heat) /
-                        (heat_limit_.single_heat * heat_limit_.heat_threshold -
-                         heat_limit_.single_heat);
-
-          ratio = std::max(0.0f, std::min(1.0f, ratio));
-          /*计算实际发射频率*/
-          float safe_freq =
-              referee_data_.heat_cooling / heat_limit_.single_heat;
-          trig_freq_ =
-              ratio * param_.expect_trig_freq_ + (1.0f - ratio) * safe_freq;
-        } else {
-          trig_freq_ = param_.expect_trig_freq_;
-        }
-      }
-    }
-  }
 
   void SetMode(uint32_t mode) { fric_mod_ = static_cast<FRICMODE>(mode); }
 
@@ -422,7 +353,6 @@ class InfantryLauncher {
   float target_trig_angle_ = 0.0f;
   float trig_angle_ = 0.0f;
   float last_trig_angle_ = 0.0f;
-  float trig_freq_ = 0.0f;
   LibXR::MillisecondTimestamp last_trig_time_ = 0;
 
   RMMotor *motor_fric_0_;
@@ -468,8 +398,8 @@ class InfantryLauncher {
         motor_trig_->GetOmega() / param_.trig_gear_ratio, dt_);
     float motor_omega_ref = std::clamp(
         plate_omega_ref,
-        static_cast<float>(-1.5 * M_2PI * trig_freq_ / param_.num_trig_tooth),
-        static_cast<float>(1.5 * M_2PI * trig_freq_ / param_.num_trig_tooth));
+        static_cast<float>(-1.5 * M_2PI * param_.trig_freq_ / param_.num_trig_tooth),
+        static_cast<float>(1.5 * M_2PI * param_.trig_freq_ / param_.num_trig_tooth));
     float out = pid_trig_sp_.Calculate(
         motor_omega_ref, motor_trig_->GetOmega() / param_.trig_gear_ratio, dt_);
 
@@ -480,33 +410,5 @@ class InfantryLauncher {
     constexpr float TAU = 0.15f;
     float alpha = dt_ / (TAU + dt_);
     return cur + alpha * (target - cur);
-  }
-  void BeginShotJudge() {
-    shot_.active = true;
-    shot_.t = 0.0f;
-  }
-
-  void UpdateShotJudge() {
-    auto now = LibXR::Timebase::GetMilliseconds();
-
-    /*未激活，直接返回*/
-    if (!shot_.active) {
-      return;
-    }
-    shot_.t = (now - last_check_time_).ToSecondf();
-
-    if (shot_.t < launcher::param::SHOT_WINDOW) {
-      return;
-    }
-    /*暂时这样检测发射弹丸数，高速时准确，低弹频低速不准确*/
-    bool success = ((motor_fric_0_->GetRPM()) <
-                    (param_.fric_rpm_ - launcher::param::DELTA_RPM)) &&
-                   ((motor_fric_0_->GetRPM()) <
-                    (param_.fric_rpm_ - launcher::param::DELTA_RPM));
-    if (success) {
-      heat_limit_.launched_num++;
-      shot_.active = false;
-    }
-    last_check_time_ = now;
   }
 };
