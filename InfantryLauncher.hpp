@@ -166,7 +166,7 @@ class InfantryLauncher {
       launcher->FricControl();
       launcher->Control();
 
-      LibXR::Thread::SleepUntil(last_time,2);
+      LibXR::Thread::SleepUntil(last_time, 2);
     }
   }
   /**
@@ -174,10 +174,14 @@ class InfantryLauncher {
    *
    */
   void Update() {
+    auto now = LibXR::Timebase::GetMilliseconds();
+    dt_ = (now - last_online_time_).ToSecondf();
+    last_online_time_ = now;
+
     referee_data_.heat_limit = 260.0f;
     referee_data_.heat_cooling = 20.0f;
     heat_limit_.single_heat = 10.0f;
-    heat_limit_.heat_threshold = 200.0f;
+    heat_limit_.heat_threshold = 2.0f;
 
     motor_fric_0_->Update();
     motor_fric_1_->Update();
@@ -203,12 +207,9 @@ class InfantryLauncher {
 
     trig_angle_ += delta_trig_angle / param_.trig_gear_ratio;
     last_motor_angle = current_motor_angle;
-
-
   }
   void FricControl() {
     switch (launcher_event_) {
-
       case LauncherEvent::SET_FRICMODE_RELAX: {
         motor_fric_0_->Relax();
         motor_fric_1_->Relax();
@@ -331,7 +332,7 @@ class InfantryLauncher {
     } else if (launcher_cmd_.isfire) {
       launcherstate_ = LauncherState::NORMAL;
     } else {
-      trig_mod_ = TRIGMODE::RELAX;
+      launcherstate_ = LauncherState::STOP;
     }
 
     switch (launcherstate_) {
@@ -342,7 +343,6 @@ class InfantryLauncher {
         trig_mod_ = TRIGMODE::SAFE;
         break;
       case LauncherState::NORMAL:
-
         if (!last_fire_notify_) {
           fire_press_time_ = now;
           press_continue_ = false;
@@ -362,7 +362,6 @@ class InfantryLauncher {
 
       default:
         break;
-
     }
     this->SetTrig();
 
@@ -370,44 +369,56 @@ class InfantryLauncher {
     UpdateShotJudge();
     last_fire_notify_ = launcher_cmd_.isfire;
   }
+
   void Heat() {
     auto now = LibXR::Timebase::GetMilliseconds();
-    float dt = (now - last_heat_time_).ToSecondf();
-    if (dt <= 0.0f){ return;}
-    last_heat_time_ = now;
 
-    heat_limit_.current_heat = std::max(
-        0.0f, heat_limit_.current_heat - referee_data_.heat_cooling * dt);
+    float delta_time = (now - last_heat_time_).ToSecondf();
+    if (delta_time >= 0.1) {
+      /*每周期都计算此周期的剩余热量*/
+      last_heat_time_ = now;
+      heat_limit_.current_heat +=
+          heat_limit_.single_heat * heat_limit_.launched_num;
+      heat_limit_.launched_num = 0;
 
-    const float Q0 = referee_data_.heat_limit;
-    const float Q = heat_limit_.current_heat;
-    const float H = heat_limit_.single_heat;
-    const float C = referee_data_.heat_cooling;
+      if (heat_limit_.current_heat <
+          (static_cast<float>(referee_data_.heat_cooling / 10.0))) {
+        heat_limit_.current_heat = 0;
+      } else {
+        heat_limit_.current_heat -=
+            static_cast<float>(referee_data_.heat_cooling / 10.0);
+      }
 
-     float freq_expect= param_.expect_trig_freq_;
-     float freq_safe = C / H;
+      float residuary_heat =
+          referee_data_.heat_limit - heat_limit_.current_heat;
+
+      /*控制control里的launcherstate*/
+      if (residuary_heat > heat_limit_.single_heat) {
+        heat_limit_.allow_fire = true;
+      } else {
+        heat_limit_.allow_fire = false;
+      }
+
+      /*不同剩余热量启用不同实际弹频*/
+      if (heat_limit_.allow_fire) {
+        if (residuary_heat <= heat_limit_.single_heat + 0.001) {
+          trig_freq_ = referee_data_.heat_cooling / heat_limit_.single_heat;
+        } else if (residuary_heat <=
+                   heat_limit_.single_heat * heat_limit_.heat_threshold) {
+          float safe_freq =
+              referee_data_.heat_cooling / heat_limit_.single_heat;
+          trig_freq_ =( residuary_heat / (heat_limit_.single_heat *
+                                           heat_limit_.heat_threshold))*(param_.expect_trig_freq_ - safe_freq)+safe_freq;
 
 
-    if (Q < 0.6f * Q0) {
-      trig_freq_ = freq_expect;
-    } else if (Q < Q0 - H) {
-      constexpr float PREDICT_T = 0.25f;
 
-      float f_max = (Q0 - Q + C * PREDICT_T) / (H * PREDICT_T);
-
-      trig_freq_ = std::clamp(f_max, freq_safe, freq_expect);
-    } else {
-      trig_freq_ = freq_safe;
+        } else {
+          trig_freq_ = param_.expect_trig_freq_;
+        }
+      }
     }
-
-    trig_freq_ = std::clamp(trig_freq_, 0.0f, freq_expect);
   }
 
-  void SetMode(uint32_t mode) {
-    mutex_.Lock();
-    launcher_event_ = static_cast<LauncherEvent>(mode);
-    mutex_.Unlock();
-  }
   /*指数缓变*/
   float SoftTranslate(float target, float cur) {
     constexpr float TAU = 0.15f;
@@ -427,22 +438,23 @@ class InfantryLauncher {
       return;
     }
     shot_.t = (now - last_check_time_).ToSecondf();
-
-    if (shot_.t < launcher::param::SHOT_WINDOW) {
-      return;
-    }
     /*暂时这样检测发射弹丸数，高速时准确，低弹频低速不准确*/
     bool success =
-        (fabs(param_frirc_0_.velocity) <
+        ((fabs(param_frirc_0_.velocity) <
          (param_.fric1_setpoint_speed - launcher::param::DELTA_RPM)) &&
         (fabs(param_frirc_1_.velocity) <
-         (param_.fric1_setpoint_speed - launcher::param::DELTA_RPM));
+         (param_.fric1_setpoint_speed - launcher::param::DELTA_RPM)));
     if (success) {
       heat_limit_.launched_num++;
       shot_.active = false;
       number_++;
     }
     last_check_time_ = now;
+  }
+  void SetMode(uint32_t mode) {
+    mutex_.Lock();
+    launcher_event_ = static_cast<LauncherEvent>(mode);
+    mutex_.Unlock();
   }
 
  private:
@@ -514,5 +526,5 @@ class InfantryLauncher {
   float out_rpm_0_ = 0;
   float out_rpm_1_ = 0;
   float target_trig_angle_ = 0.0f;
-  float number_=0;
+  float number_ = 0;
 };
