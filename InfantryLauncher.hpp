@@ -131,9 +131,7 @@ class InfantryLauncher {
         [](bool in_isr, InfantryLauncher *launcher, uint32_t event_id) {
           UNUSED(in_isr);
           UNUSED(event_id);
-          launcher->SetMode(
-              static_cast<uint32_t>(LauncherEvent::SET_FRICMODE_RELAX));
-        },
+launcher->LostCtrl();        },
         this);
 
     cmd_->GetEvent().Register(CMD::CMD_EVENT_LOST_CTRL, lost_ctrl_callback);
@@ -255,14 +253,45 @@ class InfantryLauncher {
         motor_trig_->Relax();
         break;
       case TRIGMODE::SAFE:
-        target_trig_angle_ = trig_angle_;
+      {  target_trig_angle_ = trig_angle_;
+        float plate_omega_ref = pid_trig_angle_.Calculate(
+            target_trig_angle_, trig_angle_,
+            param_trig_.omega / param_.trig_gear_ratio, dt_);
 
-        break;
+        float motor_omega_ref =
+            std::clamp(plate_omega_ref,
+                       static_cast<float>(-1.5 * M_2PI * trig_freq_ /
+                                          param_.num_trig_tooth),
+                       static_cast<float>(1.5 * M_2PI * trig_freq_ /
+                                          param_.num_trig_tooth));
+
+        cmd_trig_.velocity = pid_trig_sp_.Calculate(
+            motor_omega_ref, param_trig_.omega / param_.trig_gear_ratio, dt_);
+
+        motor_trig_->Control(cmd_trig_);
+      }
+
+      break;
       case TRIGMODE::SINGLE: {
         if (last_trig_mod_ == TRIGMODE::SAFE ||
             last_trig_mod_ == TRIGMODE::RELAX) {
           target_trig_angle_ += launcher::param::TRIGSTEP;
         }
+        float plate_omega_ref = pid_trig_angle_.Calculate(
+            target_trig_angle_, trig_angle_,
+            param_trig_.omega / param_.trig_gear_ratio, dt_);
+
+        float motor_omega_ref =
+            std::clamp(plate_omega_ref,
+                       static_cast<float>(-1.5 * M_2PI * trig_freq_ /
+                                          param_.num_trig_tooth),
+                       static_cast<float>(1.5 * M_2PI * trig_freq_ /
+                                          param_.num_trig_tooth));
+
+        cmd_trig_.velocity = pid_trig_sp_.Calculate(
+            motor_omega_ref, param_trig_.omega / param_.trig_gear_ratio, dt_);
+
+        motor_trig_->Control(cmd_trig_);
         if (target_trig_angle_ > last_trig_angle_) {
           BeginShotJudge();
         }
@@ -278,7 +307,21 @@ class InfantryLauncher {
             last_trig_time_ = now;
           }
         }
+        float plate_omega_ref = pid_trig_angle_.Calculate(
+            target_trig_angle_, trig_angle_,
+            param_trig_.omega / param_.trig_gear_ratio, dt_);
 
+        float motor_omega_ref =
+            std::clamp(plate_omega_ref,
+                       static_cast<float>(-1.5 * M_2PI * trig_freq_ /
+                                          param_.num_trig_tooth),
+                       static_cast<float>(1.5 * M_2PI * trig_freq_ /
+                                          param_.num_trig_tooth));
+
+        cmd_trig_.velocity = pid_trig_sp_.Calculate(
+            motor_omega_ref, param_trig_.omega / param_.trig_gear_ratio, dt_);
+
+        motor_trig_->Control(cmd_trig_);
         if (target_trig_angle_ > last_trig_angle_) {
           BeginShotJudge();
         }
@@ -300,25 +343,28 @@ class InfantryLauncher {
           is_reverse_ = !is_reverse_;
           last_jam_time_ = now;
         }
+        float plate_omega_ref = pid_trig_angle_.Calculate(
+            target_trig_angle_, trig_angle_,
+            param_trig_.omega / param_.trig_gear_ratio, dt_);
+
+        float motor_omega_ref =
+            std::clamp(plate_omega_ref,
+                       static_cast<float>(-1.5 * M_2PI * trig_freq_ /
+                                          param_.num_trig_tooth),
+                       static_cast<float>(1.5 * M_2PI * trig_freq_ /
+                                          param_.num_trig_tooth));
+
+        cmd_trig_.velocity = pid_trig_sp_.Calculate(
+            motor_omega_ref, param_trig_.omega / param_.trig_gear_ratio, dt_);
+
+        motor_trig_->Control(cmd_trig_);
       } break;
 
       default:
         break;
     }
 
-    float plate_omega_ref = pid_trig_angle_.Calculate(
-        target_trig_angle_, trig_angle_,
-        param_trig_.omega / param_.trig_gear_ratio, dt_);
 
-    float motor_omega_ref = std::clamp(
-        plate_omega_ref,
-        static_cast<float>(-1.5 * M_2PI * trig_freq_ / param_.num_trig_tooth),
-        static_cast<float>(1.5 * M_2PI * trig_freq_ / param_.num_trig_tooth));
-
-    cmd_trig_.velocity = pid_trig_sp_.Calculate(
-        motor_omega_ref, param_trig_.omega / param_.trig_gear_ratio, dt_);
-
-    motor_trig_->Control(cmd_trig_);
 
     last_trig_mod_ = trig_mod_;
   }
@@ -460,7 +506,14 @@ class InfantryLauncher {
     pid_trig_sp_.Reset();
     mutex_.Unlock();
   }
+void LostCtrl(){
+  mutex_.Lock();
+ launcher_event_ = LauncherEvent::SET_FRICMODE_RELAX;
 
+ target_trig_angle_ = trig_angle_;
+  last_trig_angle_ = trig_angle_;
+  mutex_.Unlock();
+}
  private:
   LauncherState launcherstate_ ;
   LauncherParam param_;
