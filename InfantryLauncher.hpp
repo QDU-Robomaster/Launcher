@@ -33,8 +33,7 @@ depends: []
 
 namespace launcher::param {
 constexpr float TRIGSTEP = static_cast<float>(M_2PI) / 10;
-constexpr float JAM_CURRENT = 5.0f;
-constexpr float SHOT_WINDOW = 0.004f;  // 20 ms
+constexpr float JAM_TOR = 0.015f;
 constexpr float DELTA_RPM = 50.0f;     // rpm
 }  // namespace launcher::param
 
@@ -371,7 +370,7 @@ launcher->LostCtrl();        },
   void Control() {
     auto now = LibXR::Timebase::GetMilliseconds();
 
-    if (fabs(param_trig_.torque) > launcher::param::JAM_CURRENT) {
+    if (fabs(param_trig_.torque) > launcher::param::JAM_TOR) {
       launcherstate_ = LauncherState::JAMMED;
     } else if (!heat_limit_.allow_fire) {
       launcherstate_ = LauncherState::OVERHEAT;
@@ -385,6 +384,8 @@ launcher->LostCtrl();        },
 
     switch (launcherstate_) {
       case LauncherState::STOP:
+        trig_mod_ = TRIGMODE::RELAX;
+        break;
       case LauncherState::OVERHEAT:
         trig_mod_ = TRIGMODE::SAFE;
         break;
@@ -456,8 +457,6 @@ launcher->LostCtrl();        },
           trig_freq_ =( residuary_heat / (heat_limit_.single_heat *
                                            heat_limit_.heat_threshold))*(param_.expect_trig_freq_ - safe_freq)+safe_freq;
 
-
-
         } else {
           trig_freq_ = param_.expect_trig_freq_;
         }
@@ -472,7 +471,7 @@ launcher->LostCtrl();        },
     return cur + alpha * (target - cur);
   }
   void BeginShotJudge() {
-    shot_.active = true;
+    active_ = true;
     last_check_time_ = LibXR::Timebase::GetMilliseconds();
   }
 
@@ -480,10 +479,9 @@ launcher->LostCtrl();        },
     auto now = LibXR::Timebase::GetMilliseconds();
 
     /*未激活，直接返回*/
-    if (!shot_.active) {
+    if (!active_) {
       return;
     }
-    shot_.t = (now - last_check_time_).ToSecondf();
     /*暂时这样检测发射弹丸数，高速时准确，低弹频低速不准确*/
     bool success =
         ((fabs(param_frirc_0_.velocity) <
@@ -492,7 +490,7 @@ launcher->LostCtrl();        },
          (param_.fric1_setpoint_speed - launcher::param::DELTA_RPM)));
     if (success) {
       heat_limit_.launched_num++;
-      shot_.active = false;
+      active_ = false;
       number_++;
     }
     last_check_time_ = now;
@@ -509,7 +507,6 @@ launcher->LostCtrl();        },
 void LostCtrl(){
   mutex_.Lock();
  launcher_event_ = LauncherEvent::SET_FRICMODE_RELAX;
-
  target_trig_angle_ = trig_angle_;
   last_trig_angle_ = trig_angle_;
   mutex_.Unlock();
@@ -557,12 +554,6 @@ void LostCtrl(){
   LibXR::Semaphore semaphore_;
   LibXR::Mutex mutex_;
   LauncherEvent launcher_event_ = LauncherEvent::SET_FRICMODE_RELAX;
-  struct ShotJudge {
-    bool active = false;
-    float t = 0.0f;
-  };
-
-  ShotJudge shot_;
   Motor::Feedback param_frirc_0_;
   Motor::Feedback param_frirc_1_;
   Motor::Feedback param_trig_;
@@ -579,7 +570,8 @@ void LostCtrl(){
                       .reduction_ratio = 36.0f,
                       .velocity = 0};
 
-  bool is_reverse_ = 0;
+  bool is_reverse_ = false;
+  bool active_=false;
   float out_rpm_0_ = 0;
   float out_rpm_1_ = 0;
   float target_trig_angle_ = 0.0f;
