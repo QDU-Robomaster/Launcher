@@ -248,7 +248,7 @@ class HeroLauncher {
   void Control() {
     LibXR::MillisecondTimestamp now_time = LibXR::Timebase::GetMilliseconds();
 
-    now_ = LibXR::Timebase::GetMilliseconds();
+
     if (launcher_event_ != LauncherEvent::SET_FRICMODE_RELAX) {
       if (launcher_cmd_.isfire && !last_fire_notify_) {  // 拨弹盘模式设定
         fire_press_time_ = now_time;
@@ -307,9 +307,9 @@ class HeroLauncher {
 
         delay_time_++;
       }
-      /*电流cur=tor/K*/
+
       if (delay_time_ > 50) {  // 延迟50个控制周期
-        if (std::abs(param_motor_fric_back_left_.torque) / M3508_K > 1) {  // 发弹检测
+        if (std::abs(param_motor_fric_back_left_.torque) / M3508_K > 0.8) {  // 发弹检测
           trig_zero_angle_ = trig_angle_;  // 获取电机当前位置
           trig_setpoint_angle_ =
               trig_angle_ - TRIG_ZERO_ANGLE_OFFSET;  // 偏移量
@@ -338,6 +338,7 @@ class HeroLauncher {
           }
         }
       }
+      now_ = LibXR::Timebase::GetMilliseconds();
 
       // 添加发射超时检测（超过100毫秒未检测到发弹则重置状态）
       if (start_fire_time_ > 0 && (now_ - start_fire_time_ > 100) &&
@@ -346,10 +347,10 @@ class HeroLauncher {
         enable_fire_ = false;
         start_fire_time_ = now_;
       }
-      /*电流cur=tor/K*/
+
       if (!mark_launch_) {  // 发弹状态检测
         {
-          if (std::abs(param_motor_fric_back_left_.torque) > 5) {
+          if (std::abs(param_motor_fric_back_left_.torque) / M3508_K > 0.8) {
             fire_flag_ = false;
 
             fired_++;
