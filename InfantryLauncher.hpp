@@ -133,7 +133,6 @@ class InfantryLauncher {
           UNUSED(event_id);
           launcher->SetMode(
               static_cast<uint32_t>(LauncherEvent::SET_FRICMODE_RELAX));
-          launcher->trig_mod_ = TRIGMODE::RELAX;
         },
         this);
 
@@ -228,6 +227,8 @@ class InfantryLauncher {
             pid_fric_0_.Calculate(out_rpm_0, param_frirc_0_.velocity, dt_);
         cmd_fric_1_.velocity =
             pid_fric_1_.Calculate(out_rpm_1, param_frirc_1_.velocity, dt_);
+        motor_fric_0_->Control(cmd_fric_0_);
+        motor_fric_1_->Control(cmd_fric_1_);
       } break;
       case LauncherEvent::SET_FRICMODE_READY: {
         out_rpm_0_ = param_.fric1_setpoint_speed;
@@ -237,12 +238,13 @@ class InfantryLauncher {
             pid_fric_0_.Calculate(out_rpm_0_, param_frirc_0_.velocity, dt_);
         cmd_fric_1_.velocity =
             pid_fric_1_.Calculate(out_rpm_1_, param_frirc_1_.velocity, dt_);
+        motor_fric_0_->Control(cmd_fric_0_);
+        motor_fric_1_->Control(cmd_fric_1_);
       } break;
       default:
         break;
     }
-    motor_fric_0_->Control(cmd_fric_0_);
-    motor_fric_1_->Control(cmd_fric_1_);
+
   }
 
   void SetTrig() {
@@ -272,7 +274,7 @@ class InfantryLauncher {
         if (trig_freq_ > 0.0f) {
           float trig_speed = 1.0f / trig_freq_;
           if (since_last >= trig_speed) {
-            target_trig_angle_ += launcher::param::TRIGSTEP;
+            target_trig_angle_ +=launcher::param::TRIGSTEP;
             last_trig_time_ = now;
           }
         }
@@ -337,8 +339,6 @@ class InfantryLauncher {
 
     switch (launcherstate_) {
       case LauncherState::STOP:
-        trig_mod_ = TRIGMODE::RELAX;
-        break;
       case LauncherState::OVERHEAT:
         trig_mod_ = TRIGMODE::SAFE;
         break;
@@ -454,11 +454,15 @@ class InfantryLauncher {
   void SetMode(uint32_t mode) {
     mutex_.Lock();
     launcher_event_ = static_cast<LauncherEvent>(mode);
+    pid_fric_0_.Reset();
+    pid_fric_1_.Reset();
+    pid_trig_angle_.Reset();
+    pid_trig_sp_.Reset();
     mutex_.Unlock();
   }
 
  private:
-  LauncherState launcherstate_ = LauncherState::STOP;
+  LauncherState launcherstate_ ;
   LauncherParam param_;
   RefereeData referee_data_;
   HeatLimit heat_limit_{
