@@ -97,8 +97,7 @@ depends:
 #include "timebase.hpp"
 #include "uart.hpp"
 
-
-#define TRIG_ZERO_ANGLE_OFFSET (0.25f)  // 拨弹盘零点偏移角度
+#define TRIG_ZERO_ANGLE_OFFSET (0.50f)  // 拨弹盘零点偏移角度
 #define TRIG_LOADING_ANGLE_STEP \
   (static_cast<float>(M_2PI) / 1002.0f)  // 首次发弹标定的角度步长
 #define M3508_K 0.3f
@@ -210,8 +209,6 @@ class HeroLauncher {
     launcher_cmd_tp.StartWaiting();
     auto last_time = LibXR::Timebase::GetMilliseconds();
     while (true) {
-
-
       HeroLauncher->mutex_.Lock();
       HeroLauncher->Update();
       HeroLauncher->HeatLimit();
@@ -227,7 +224,8 @@ class HeroLauncher {
     this->dt_ = (now - this->last_wakeup_).ToSecondf();
     this->last_wakeup_ = now;
 
-    const float LAST_TRIG_MOTOR_ANGLE = LibXR::CycleValue<float>(param_trig_.abs_angle);
+    const float LAST_TRIG_MOTOR_ANGLE =
+        LibXR::CycleValue<float>(param_trig_.abs_angle);
 
     motor_fric_front_left_->Update();
     motor_fric_front_right_->Update();
@@ -247,7 +245,6 @@ class HeroLauncher {
 
   void Control() {
     LibXR::MillisecondTimestamp now_time = LibXR::Timebase::GetMilliseconds();
-
 
     if (launcher_event_ != LauncherEvent::SET_FRICMODE_RELAX) {
       if (launcher_cmd_.isfire && !last_fire_notify_) {  // 拨弹盘模式设定
@@ -278,7 +275,9 @@ class HeroLauncher {
         fric_target_speed_[1] = 0;
         fric_target_speed_[2] = 0;
         fric_target_speed_[3] = 0;
-
+        for (LibXR::PID<float> &i : fric_speed_pid_) {
+          i.SetOutLimit(0.1f);
+        }
         break;
       case LauncherEvent::SET_FRICMODE_READY:
 
@@ -286,12 +285,19 @@ class HeroLauncher {
         fric_target_speed_[1] = PARAM.fric2_setpoint_speed;
         fric_target_speed_[2] = PARAM.fric1_setpoint_speed;
         fric_target_speed_[3] = PARAM.fric1_setpoint_speed;
+        if (motor_fric_back_left_->GetFeedback().velocity >
+            PARAM.fric1_setpoint_speed) {
+          fric_speed_pid_[0].SetOutLimit(1.0f);
+          fric_speed_pid_[1].SetOutLimit(1.0f);
+          fric_speed_pid_[2].SetOutLimit(0.8f);
+          fric_speed_pid_[3].SetOutLimit(0.8f);
+        }
         break;
       default:
         break;
     }
     /*电流cur=tor/K*/
-    current_back_left_ = param_motor_fric_back_left_.torque;
+    current_back_left_ = param_motor_fric_back_left_.torque / M3508_K;
 
     if (first_loading_) {  // 首次发弹进行弹丸位置标定
       if (trig_mod_ == TRIGMODE::SINGLE) {
@@ -309,7 +315,8 @@ class HeroLauncher {
       }
 
       if (delay_time_ > 50) {  // 延迟50个控制周期
-        if (std::abs(param_motor_fric_back_left_.torque) / M3508_K > 0.8) {  // 发弹检测
+        if (std::abs(param_motor_fric_back_left_.torque) / M3508_K >
+            0.5) {                         // 发弹检测
           trig_zero_angle_ = trig_angle_;  // 获取电机当前位置
           trig_setpoint_angle_ =
               trig_angle_ - TRIG_ZERO_ANGLE_OFFSET;  // 偏移量
@@ -350,7 +357,7 @@ class HeroLauncher {
 
       if (!mark_launch_) {  // 发弹状态检测
         {
-          if (std::abs(param_motor_fric_back_left_.torque) / M3508_K > 0.8) {
+          if (std::abs(param_motor_fric_back_left_.torque) / M3508_K > 0.5) {
             fire_flag_ = false;
 
             fired_++;
@@ -364,19 +371,14 @@ class HeroLauncher {
     }
     real_launch_delay_ = (finish_fire_time_ - start_fire_time_).ToMillisecond();
 
-    fric_output_[0] = fric_speed_pid_[0].Calculate(
+    cmd_fric_front_left_.velocity = fric_speed_pid_[0].Calculate(
         fric_target_speed_[0], param_motor_fric_front_left_.velocity, dt_);
-    fric_output_[1] = fric_speed_pid_[1].Calculate(
+    cmd_fric_front_right_.velocity = fric_speed_pid_[1].Calculate(
         fric_target_speed_[1], param_motor_fric_front_right_.velocity, dt_);
-    fric_output_[2] = fric_speed_pid_[2].Calculate(
+    cmd_fric_back_left_.velocity = fric_speed_pid_[2].Calculate(
         fric_target_speed_[2], param_motor_fric_back_left_.velocity, dt_);
-    fric_output_[3] = fric_speed_pid_[3].Calculate(
+    cmd_fric_back_right_.velocity = fric_speed_pid_[3].Calculate(
         fric_target_speed_[3], param_motor_fric_back_right_.velocity, dt_);
-
-    cmd_fric_front_left_.velocity = fric_output_[0];
-    cmd_fric_front_right_.velocity = fric_output_[1];
-    cmd_fric_back_left_.velocity = fric_output_[2];
-    cmd_fric_back_right_.velocity = fric_output_[3];
 
     motor_fric_front_left_->Control(cmd_fric_front_left_);
     motor_fric_front_right_->Control(cmd_fric_front_right_);
@@ -403,17 +405,18 @@ class HeroLauncher {
   }
   void HeatLimit() {
     heat_ctrl_.heat_limit = referee_data_.heat_limit;
-    heat_ctrl_.heat_limit = 1000.0f;  // for debug
+    heat_ctrl_.heat_limit = 129.0f;  // for debug
     heat_ctrl_.heat_increase = 100.0f;
     heat_ctrl_.cooling_rate = referee_data_.cooling_rate;
-    heat_ctrl_.cooling_rate =1000.0f;  // for debug
-    heat_ctrl_.heat -=
-        heat_ctrl_.cooling_rate / 500.0f;  // 每个控制周期的冷却恢复
+    heat_ctrl_.cooling_rate = 13.0f;  // for debug
     if (fired_ >= 1) {
       heat_ctrl_.heat += heat_ctrl_.heat_increase;
       fired_ = 0;
     }
-    heat_ctrl_.heat = std::clamp(heat_ctrl_.heat, 0.0f, heat_ctrl_.heat_limit);
+    heat_ctrl_.heat -=
+        heat_ctrl_.cooling_rate /(1 / dt_);  // 每个控制周期的冷却恢复
+    //heat_ctrl_.heat = std::clamp(heat_ctrl_.heat, 0.0f, heat_ctrl_.heat_limit);
+    heat_ctrl_.heat = std::max(heat_ctrl_.heat, 0.0f);
     float available_float =
         (this->heat_ctrl_.heat_limit - this->heat_ctrl_.heat) /
         this->heat_ctrl_.heat_increase;
@@ -504,7 +507,6 @@ class HeroLauncher {
 
   float fric_target_speed_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
-  float fric_output_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   LibXR::PID<float> trig_angle_pid_;
   LibXR::PID<float> trig_speed_pid_;
 
@@ -546,6 +548,7 @@ class HeroLauncher {
   Motor::Feedback param_motor_fric_back_left_;
   Motor::Feedback param_motor_fric_back_right_;
   Motor::Feedback param_trig_;
+
   Motor::MotorCmd cmd_fric_front_left_ =
       Motor::MotorCmd{.mode = Motor::ControlMode::MODE_CURRENT,
                       .reduction_ratio = 1.0f,
