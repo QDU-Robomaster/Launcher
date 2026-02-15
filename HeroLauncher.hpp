@@ -102,6 +102,10 @@ depends:
   (static_cast<float>(M_2PI) / 1002.0f)  // 首次发弹标定的角度步长
 #define M3508_K 0.3f
 
+/**
+ * @brief 英雄发射机构实现
+ * @details 负责摩擦轮、拨弹盘控制与热量约束发射逻辑。
+ */
 class HeroLauncher {
   /*只需要保留LauncherEvent的有关内容，其他修改回退*/
  public:
@@ -150,6 +154,23 @@ class HeroLauncher {
     /*弹频*/
     float trig_freq_;
   };
+
+  /**
+   * @brief 构造 HeroLauncher
+   * @param hw 硬件容器
+   * @param app 应用管理器
+   * @param motor_fric_front_left 前左摩擦轮电机
+   * @param motor_fric_front_right 前右摩擦轮电机
+   * @param motor_fric_back_left 后左摩擦轮电机
+   * @param motor_fric_back_right 后右摩擦轮电机
+   * @param motor_trig 拨弹电机
+   * @param task_stack_depth 线程栈深
+   * @param trig_angle_pid 拨弹角度环参数
+   * @param trig_speed_pid 拨弹速度环参数
+   * @param fric_speed_pid_0~3 摩擦轮参数
+   * @param launcher_param 发射器参数
+   * @param cmd CMD 模块指针
+   */
   HeroLauncher(LibXR::HardwareContainer& hw, LibXR::ApplicationManager& app,
                RMMotor* motor_fric_front_left, RMMotor* motor_fric_front_right,
                RMMotor* motor_fric_back_left, RMMotor* motor_fric_back_right,
@@ -203,6 +224,10 @@ class HeroLauncher {
     tp_cmd_launcher.RegisterCallback(launcher_cmd_callback);
   }
 
+  /**
+   * @brief 发射器主线程
+   * @param HeroLauncher 模块实例
+   */
   static void ThreadFunction(HeroLauncher* HeroLauncher) {
     LibXR::Topic::ASyncSubscriber<CMD::LauncherCMD> launcher_cmd_tp(
         "launcher_cmd");
@@ -219,6 +244,9 @@ class HeroLauncher {
     }
   }
 
+  /**
+   * @brief 更新电机反馈和状态量
+   */
   void Update() {
     auto now = LibXR::Timebase::GetMicroseconds();
     this->dt_ = (now - this->last_wakeup_).ToSecondf();
@@ -243,6 +271,10 @@ class HeroLauncher {
     this->trig_angle_ += DELTA_MOTOR_ANGLE / PARAM.trig_gear_ratio;
   }
 
+  /**
+   * @brief 控制流程
+   * @details 状态机更新、拨弹控制和摩擦轮控制主入口。
+   */
   void Control() {
     LibXR::MillisecondTimestamp now_time = LibXR::Timebase::GetMilliseconds();
 
@@ -403,6 +435,10 @@ class HeroLauncher {
     }
     motor_trig_->Control(cmd_trig_);
   }
+
+  /**
+   * @brief 热量限制计算
+   */
   void HeatLimit() {
     heat_ctrl_.heat_limit = referee_data_.heat_limit;
     heat_ctrl_.heat_limit = 129.0f;  // for debug
@@ -423,6 +459,10 @@ class HeroLauncher {
         this->heat_ctrl_.heat_increase;
     heat_ctrl_.available_shot = static_cast<uint32_t>(available_float);
   }
+
+  /**
+   * @brief 失控处理
+   */
   void LostCtrl() {
     // 重置所有发射相关的状态变量到初始模式
     launcher_event_ = LauncherEvent::SET_FRICMODE_SAFE;
