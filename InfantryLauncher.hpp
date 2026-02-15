@@ -93,11 +93,11 @@ class InfantryLauncher {
    * @param  num_trig_tooth_ 拨弹盘中一圈能存储几颗弹丸
    * @param bullet_speed 弹丸速度
    */
-  InfantryLauncher(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
-                   RMMotor *motor_fric_front_left,
-                   RMMotor *motor_fric_front_right,
-                   RMMotor *motor_fric_back_left,
-                   RMMotor *motor_fric_back_right, RMMotor *motor_trig,
+  InfantryLauncher(LibXR::HardwareContainer& hw, LibXR::ApplicationManager& app,
+                   RMMotor* motor_fric_front_left,
+                   RMMotor* motor_fric_front_right,
+                   RMMotor* motor_fric_back_left,
+                   RMMotor* motor_fric_back_right, RMMotor* motor_trig,
                    uint32_t task_stack_depth,
                    LibXR::PID<float>::Param pid_param_trig_angle,
                    LibXR::PID<float>::Param pid_param_trig_speed,
@@ -105,7 +105,7 @@ class InfantryLauncher {
                    LibXR::PID<float>::Param pid_param_fric_1,
                    LibXR::PID<float>::Param pid_param_fric_2,
                    LibXR::PID<float>::Param pid_param_fric_3,
-                   LauncherParam launch_param, CMD *cmd)
+                   LauncherParam launch_param, CMD* cmd)
       : motor_fric_0_(motor_fric_front_left),
         motor_fric_1_(motor_fric_front_right),
         motor_trig_(motor_trig),
@@ -127,7 +127,7 @@ class InfantryLauncher {
                    LibXR::Thread::Priority::HIGH);
 
     auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
-        [](bool in_isr, InfantryLauncher *launcher, uint32_t event_id) {
+        [](bool in_isr, InfantryLauncher* launcher, uint32_t event_id) {
           UNUSED(in_isr);
           UNUSED(event_id);
           launcher->LostCtrl();
@@ -136,11 +136,11 @@ class InfantryLauncher {
 
     cmd_->GetEvent().Register(CMD::CMD_EVENT_LOST_CTRL, lost_ctrl_callback);
 
-    auto launcher_cmd_callback = LibXR::Callback<LibXR::RawData &>::Create(
-        [](bool in_isr, InfantryLauncher *Launcher, LibXR::RawData &raw_data) {
+    auto launcher_cmd_callback = LibXR::Callback<LibXR::RawData&>::Create(
+        [](bool in_isr, InfantryLauncher* Launcher, LibXR::RawData& raw_data) {
           UNUSED(in_isr);
           CMD::LauncherCMD cmd_lau =
-              *reinterpret_cast<CMD::LauncherCMD *>(raw_data.addr_);
+              *reinterpret_cast<CMD::LauncherCMD*>(raw_data.addr_);
           Launcher->launcher_cmd_.isfire = cmd_lau.isfire;
         },
         this);
@@ -151,7 +151,7 @@ class InfantryLauncher {
     tp_cmd_launcher.RegisterCallback(launcher_cmd_callback);
   }
 
-  static void ThreadFunction(InfantryLauncher *launcher) {
+  static void ThreadFunction(InfantryLauncher* launcher) {
     LibXR::Topic::ASyncSubscriber<CMD::LauncherCMD> launcher_cmd_tp(
         "launcher_cmd");
     launcher_cmd_tp.StartWaiting();
@@ -211,10 +211,9 @@ class InfantryLauncher {
       launcherstate_ = LauncherState::RELAX;
     } else if (!heat_limit_.allow_fire) {
       launcherstate_ = LauncherState::STOP;
-    } else if (launcher_cmd_.isfire) {
-      launcherstate_ = LauncherState::NORMAL;
     } else {
-      launcherstate_ = LauncherState::STOP;
+      launcherstate_ =
+          launcher_cmd_.isfire ? LauncherState::NORMAL : LauncherState::STOP;
     }
   }
   void SetFric() {
@@ -351,8 +350,8 @@ class InfantryLauncher {
     auto cmd_fric_1 = Motor::MotorCmd{.mode = Motor::ControlMode::MODE_CURRENT,
                                       .reduction_ratio = 19.0f,
                                       .velocity = out_fric_1};
-    auto motor_control = [&](Motor *motor, const Motor::Feedback &fb,
-                             const Motor::MotorCmd &cmd) {
+    auto motor_control = [&](Motor* motor, const Motor::Feedback& fb,
+                             const Motor::MotorCmd& cmd) {
       if (fb.state == 0) {
         motor->Enable();
       } else if (fb.state != 0 and fb.state != 1) {
@@ -474,9 +473,9 @@ class InfantryLauncher {
       .heat_threshold = 0.0f,
       .allow_fire = true,
   };
-  RMMotor *motor_fric_0_;
-  RMMotor *motor_fric_1_;
-  RMMotor *motor_trig_;
+  RMMotor* motor_fric_0_;
+  RMMotor* motor_fric_1_;
+  RMMotor* motor_trig_;
 
   TRIGMODE last_trig_mod_ = TRIGMODE::RELAX;
   TRIGMODE trig_mod_ = TRIGMODE::RELAX;
@@ -511,11 +510,11 @@ class InfantryLauncher {
   LibXR::MillisecondTimestamp last_jam_time_ = 0.0f;
   LibXR::MillisecondTimestamp jam_keep_time_ = 0.0f;
   LibXR::MillisecondTimestamp last_online_time_ = 0.0f;
-  CMD *cmd_;
+  CMD* cmd_;
   bool is_reverse_ = false;
   bool shoot_active_ = false;
   float target_rpm_ = 0;
-  void TrigControl(float &out_trig, float target_trig_angle_, float dt_) {
+  void TrigControl(float& out_trig, float target_trig_angle_, float dt_) {
     float plate_omega_ref = pid_trig_angle_.Calculate(
         target_trig_angle_, trig_angle_,
         param_trig_.omega / param_.trig_gear_ratio, dt_);
@@ -526,7 +525,7 @@ class InfantryLauncher {
     out_trig = pid_trig_sp_.Calculate(
         motor_omega_ref, param_trig_.omega / param_.trig_gear_ratio, dt_);
   }
-  void FricControl(float &out_fric_0, float &out_fric_1, float target_rpm,
+  void FricControl(float& out_fric_0, float& out_fric_1, float target_rpm,
                    float dt_) {
     out_fric_0 = pid_fric_0_.Calculate(target_rpm, param_fric_0_.velocity, dt_);
     out_fric_1 = pid_fric_1_.Calculate(target_rpm, param_fric_1_.velocity, dt_);

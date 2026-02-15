@@ -87,7 +87,6 @@ depends:
 #include "libxr_def.hpp"
 #include "pid.hpp"
 
-
 template <class LauncherType>
 class Launcher : public LibXR::Application {
  public:
@@ -111,18 +110,18 @@ class Launcher : public LibXR::Application {
            LibXR::PID<float>::Param pid_fric_speed_1,
            LibXR::PID<float>::Param pid_fric_speed_2,
            LibXR::PID<float>::Param pid_fric_speed_3,
-           LauncherParam launcher_param, CMD* cmd )
-      : launcher_(
-            hw, app, motor_fric_front_left, motor_fric_front_right,
-            motor_fric_back_left, motor_fric_back_right, motor_trig,
-            task_stack_depth, pid_trig_angle, pid_trig_speed, pid_fric_speed_0,
-            pid_fric_speed_1, pid_fric_speed_2, pid_fric_speed_3,
-            typename LauncherType::LauncherParam{
-                launcher_param.fric1_setpoint_speed,
-                launcher_param.fric2_setpoint_speed,
-                launcher_param.trig_gear_ratio, launcher_param.num_trig_tooth,
-                launcher_param.trig_freq_},
-            cmd) {
+           LauncherParam launcher_param, CMD* cmd)
+      : launcher_(hw, app, motor_fric_front_left, motor_fric_front_right,
+                  motor_fric_back_left, motor_fric_back_right, motor_trig,
+                  task_stack_depth, pid_trig_angle, pid_trig_speed,
+                  pid_fric_speed_0, pid_fric_speed_1, pid_fric_speed_2,
+                  pid_fric_speed_3,
+                  typename LauncherType::LauncherParam{
+                      launcher_param.fric1_setpoint_speed,
+                      launcher_param.fric2_setpoint_speed,
+                      launcher_param.trig_gear_ratio,
+                      launcher_param.num_trig_tooth, launcher_param.trig_freq_},
+                  cmd) {
     UNUSED(hw);
     UNUSED(app);
 
@@ -132,7 +131,7 @@ class Launcher : public LibXR::Application {
           launcher->EventHandler(event_id);
         },
         this);
-     launcher_event_.Register(
+    launcher_event_.Register(
         static_cast<uint32_t>(LauncherEvent::SET_FRICMODE_RELAX), callback);
     launcher_event_.Register(
         static_cast<uint32_t>(LauncherEvent::SET_FRICMODE_SAFE), callback);
@@ -158,5 +157,4 @@ class Launcher : public LibXR::Application {
  private:
   LauncherType launcher_;
   LibXR::Event launcher_event_;
-
 };
