@@ -150,17 +150,17 @@ class HeroLauncher {
     /*弹频*/
     float trig_freq_;
   };
-  HeroLauncher(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app,
-               RMMotor *motor_fric_front_left, RMMotor *motor_fric_front_right,
-               RMMotor *motor_fric_back_left, RMMotor *motor_fric_back_right,
-               RMMotor *motor_trig, uint32_t task_stack_depth,
+  HeroLauncher(LibXR::HardwareContainer& hw, LibXR::ApplicationManager& app,
+               RMMotor* motor_fric_front_left, RMMotor* motor_fric_front_right,
+               RMMotor* motor_fric_back_left, RMMotor* motor_fric_back_right,
+               RMMotor* motor_trig, uint32_t task_stack_depth,
                LibXR::PID<float>::Param trig_angle_pid,
                LibXR::PID<float>::Param trig_speed_pid,
                LibXR::PID<float>::Param fric_speed_pid_0,
                LibXR::PID<float>::Param fric_speed_pid_1,
                LibXR::PID<float>::Param fric_speed_pid_2,
                LibXR::PID<float>::Param fric_speed_pid_3,
-               LauncherParam launcher_param, CMD *cmd)
+               LauncherParam launcher_param, CMD* cmd)
       : PARAM(launcher_param),
         motor_fric_front_left_(motor_fric_front_left),
         motor_fric_front_right_(motor_fric_front_right),
@@ -180,7 +180,7 @@ class HeroLauncher {
     thread_.Create(this, ThreadFunction, "HeroLauncherThread", task_stack_depth,
                    LibXR::Thread::Priority::MEDIUM);
     auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
-        [](bool in_isr, HeroLauncher *HeroLauncher, uint32_t event_id) {
+        [](bool in_isr, HeroLauncher* HeroLauncher, uint32_t event_id) {
           UNUSED(in_isr);
           UNUSED(event_id);
           HeroLauncher->LostCtrl();
@@ -188,11 +188,11 @@ class HeroLauncher {
         this);
     cmd_->GetEvent().Register(CMD::CMD_EVENT_LOST_CTRL, lost_ctrl_callback);
 
-    auto launcher_cmd_callback = LibXR::Callback<LibXR::RawData &>::Create(
-        [](bool in_isr, HeroLauncher *HeroLauncher, LibXR::RawData &raw_data) {
+    auto launcher_cmd_callback = LibXR::Callback<LibXR::RawData&>::Create(
+        [](bool in_isr, HeroLauncher* HeroLauncher, LibXR::RawData& raw_data) {
           UNUSED(in_isr);
           CMD::LauncherCMD cmd_lau =
-              *reinterpret_cast<CMD::LauncherCMD *>(raw_data.addr_);
+              *reinterpret_cast<CMD::LauncherCMD*>(raw_data.addr_);
           HeroLauncher->launcher_cmd_.isfire = cmd_lau.isfire;
         },
         this);
@@ -203,7 +203,7 @@ class HeroLauncher {
     tp_cmd_launcher.RegisterCallback(launcher_cmd_callback);
   }
 
-  static void ThreadFunction(HeroLauncher *HeroLauncher) {
+  static void ThreadFunction(HeroLauncher* HeroLauncher) {
     LibXR::Topic::ASyncSubscriber<CMD::LauncherCMD> launcher_cmd_tp(
         "launcher_cmd");
     launcher_cmd_tp.StartWaiting();
@@ -275,7 +275,7 @@ class HeroLauncher {
         fric_target_speed_[1] = 0;
         fric_target_speed_[2] = 0;
         fric_target_speed_[3] = 0;
-        for (LibXR::PID<float> &i : fric_speed_pid_) {
+        for (LibXR::PID<float>& i : fric_speed_pid_) {
           i.SetOutLimit(0.1f);
         }
         break;
@@ -414,8 +414,9 @@ class HeroLauncher {
       fired_ = 0;
     }
     heat_ctrl_.heat -=
-        heat_ctrl_.cooling_rate /(1 / dt_);  // 每个控制周期的冷却恢复
-    //heat_ctrl_.heat = std::clamp(heat_ctrl_.heat, 0.0f, heat_ctrl_.heat_limit);
+        heat_ctrl_.cooling_rate / (1 / dt_);  // 每个控制周期的冷却恢复
+    // heat_ctrl_.heat = std::clamp(heat_ctrl_.heat, 0.0f,
+    // heat_ctrl_.heat_limit);
     heat_ctrl_.heat = std::max(heat_ctrl_.heat, 0.0f);
     float available_float =
         (this->heat_ctrl_.heat_limit - this->heat_ctrl_.heat) /
@@ -492,11 +493,11 @@ class HeroLauncher {
 
   LibXR::MillisecondTimestamp start_loading_time_ = 0;
 
-  RMMotor *motor_fric_front_left_;
-  RMMotor *motor_fric_front_right_;
-  RMMotor *motor_fric_back_left_;
-  RMMotor *motor_fric_back_right_;
-  RMMotor *motor_trig_;
+  RMMotor* motor_fric_front_left_;
+  RMMotor* motor_fric_front_right_;
+  RMMotor* motor_fric_back_left_;
+  RMMotor* motor_fric_back_right_;
+  RMMotor* motor_trig_;
 
   float trig_setpoint_angle_ = 0.0f;
   float trig_setpoint_speed_ = 0.0f;
@@ -537,7 +538,7 @@ class HeroLauncher {
 
   uint8_t delay_time_ = 0;
 
-  CMD *cmd_;
+  CMD* cmd_;
   LibXR::Thread thread_;
   LibXR::Semaphore semaphore_;
   LibXR::Mutex mutex_;
