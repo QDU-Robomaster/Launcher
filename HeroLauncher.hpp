@@ -101,9 +101,9 @@ depends:
  */
 class HeroLauncher {
  public:
-  static constexpr float TRIG_ZERO_ANGLE_OFFSET = 0.50f;
+  static constexpr float TRIG_ZERO_ANGLE_OFFSET = 0.55f;
   static constexpr float TRIG_LOADING_ANGLE_STEP =
-      static_cast<float>(M_2PI) / 1002.0f;
+      static_cast<float>(M_2PI) / 1000.0f;
   static constexpr float M3508_TORQUE_CONSTANT = 0.3f;
 
   enum class TrigMode : uint8_t {
@@ -236,9 +236,6 @@ class HeroLauncher {
    * @details 拨弹控制、发弹检测和摩擦轮PID输出。
    */
   void Control() {
-    /*电流cur=tor/K*/
-    current_back_left_ =
-        param_motor_fric_back_left_.torque / M3508_TORQUE_CONSTANT;
 
     if (first_loading_) {
       FirstLoadingControl();
@@ -492,8 +489,8 @@ class HeroLauncher {
     }
 
     if (delay_time_ > 50) {  // 延迟50个控制周期
-      if (std::abs(param_motor_fric_back_left_.torque) / M3508_TORQUE_CONSTANT >
-          0.5) {                         // 发弹检测
+      if (std::abs(param_motor_fric_back_left_.torque)>
+          0.05) {                         // 发弹检测
         trig_zero_angle_ = trig_angle_;  // 获取电机当前位置
         trig_setpoint_angle_ = trig_angle_ - TRIG_ZERO_ANGLE_OFFSET;  // 偏移量
 
@@ -536,8 +533,8 @@ class HeroLauncher {
     }
 
     if (!mark_launch_) {  // 发弹状态检测
-      if (std::abs(param_motor_fric_back_left_.torque) / M3508_TORQUE_CONSTANT >
-          0.5) {
+      if (std::abs(param_motor_fric_back_left_.torque)>
+          0.05) {
         fire_flag_ = false;
 
         fired_++;
