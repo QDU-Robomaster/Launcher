@@ -15,13 +15,13 @@
 3. 先验证模式切换，再验证单发与连发流程。
 
 标准命令流程：
-    xrobot_add_mod Launcher --instance-id launcher
+    xrobot_add_mod InfantryLauncher --instance-id launcher
     xrobot_gen_main
     cube-cmake --build /home/leo/Documents/bsp-dev-c/build/debug --
 
 ## 4. 配置示例（YAML）
-module: Launcher
-entry_header: Modules/Launcher/Launcher.hpp
+module: InfantryLauncher
+entry_header: Modules/InfantryLauncher/InfantryLauncher.hpp
 constructor_args:
   - motor_fric_front_left: '@&motor_fric_front_left'
   - motor_fric_front_right: '@&motor_fric_front_right'
@@ -99,4 +99,4 @@ Depends:
   - qdu-future/RMMotor
 
 ## 6. 代码入口
-Modules/Launcher/Launcher.hpp
+Modules/InfantryLauncher/InfantryLauncher.hpp

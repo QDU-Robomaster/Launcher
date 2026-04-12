@@ -26,14 +26,14 @@ inline int InfantryLauncher::DebugCommand(int argc, char **argv) {
       {"full", VIEW_FULL},
   }};
 
-#define LAUNCHER_MOTOR_FIELDS(name, member, mask)                               \
-  DEBUG_CORE_LIVE_U8(InfantryLauncher, name "_state", (mask),                    \
-                     (self->member).state),                                       \
-      DEBUG_CORE_LIVE_F32(InfantryLauncher, name "_velocity", (mask),           \
-                          (self->member).velocity),                              \
-      DEBUG_CORE_LIVE_F32(InfantryLauncher, name "_omega", (mask),              \
-                          (self->member).omega),                                 \
-      DEBUG_CORE_LIVE_F32(InfantryLauncher, name "_torque", (mask),             \
+#define LAUNCHER_MOTOR_FIELDS(name, member, mask)                     \
+  DEBUG_CORE_LIVE_U8(InfantryLauncher, name "_state", (mask),         \
+                     (self->member).state),                           \
+      DEBUG_CORE_LIVE_F32(InfantryLauncher, name "_velocity", (mask), \
+                          (self->member).velocity),                   \
+      DEBUG_CORE_LIVE_F32(InfantryLauncher, name "_omega", (mask),    \
+                          (self->member).omega),                      \
+      DEBUG_CORE_LIVE_F32(InfantryLauncher, name "_torque", (mask),   \
                           (self->member).torque)
 
   static const debug_core::LiveFieldDesc<InfantryLauncher> FIELDS[] = {
@@ -50,27 +50,36 @@ inline int InfantryLauncher::DebugCommand(int argc, char **argv) {
                            self->heat_limit_.allow_fire),
       DEBUG_CORE_LIVE_BOOL(InfantryLauncher, "long_press", MASK_STATE,
                            self->press_continue_),
-      DEBUG_CORE_LIVE_BOOL(InfantryLauncher, "shoot_active", MASK_STATE,
-                           self->shoot_active_),
-      DEBUG_CORE_LIVE_F32(InfantryLauncher, "target_rpm_0", MASK_MOTOR,
-                          self->target_rpm_[0]),
-      DEBUG_CORE_LIVE_F32(InfantryLauncher, "target_rpm_1", MASK_MOTOR,
-                          self->target_rpm_[1]),
+      DEBUG_CORE_LIVE_BOOL(InfantryLauncher, "step_active", MASK_STATE,
+                           self->trigger_step_active_),
+      DEBUG_CORE_LIVE_F32(InfantryLauncher, "target_rpm", MASK_MOTOR,
+                          self->target_rpm_),
       DEBUG_CORE_LIVE_F32(InfantryLauncher, "trig_angle", MASK_MOTOR,
                           self->trig_angle_),
       DEBUG_CORE_LIVE_F32(InfantryLauncher, "trig_target_angle", MASK_MOTOR,
                           self->target_trig_angle_),
-      LAUNCHER_MOTOR_FIELDS("fric_0", param_fric_[0], MASK_MOTOR),
-      LAUNCHER_MOTOR_FIELDS("fric_1", param_fric_[1], MASK_MOTOR),
+      DEBUG_CORE_LIVE_F32(InfantryLauncher, "trig_angle_error", MASK_MOTOR,
+                          self->target_trig_angle_ - self->trig_angle_),
+      LAUNCHER_MOTOR_FIELDS("fric_0", param_fric_0_, MASK_MOTOR),
+      LAUNCHER_MOTOR_FIELDS("fric_1", param_fric_1_, MASK_MOTOR),
       LAUNCHER_MOTOR_FIELDS("trig", param_trig_, MASK_MOTOR),
       DEBUG_CORE_LIVE_F32(InfantryLauncher, "heat_now", MASK_HEAT,
                           self->heat_limit_.current_heat),
+      DEBUG_CORE_LIVE_F32(InfantryLauncher, "heat_ref", MASK_HEAT,
+                          self->ref_data_.current_heat_17),
       DEBUG_CORE_LIVE_F32(InfantryLauncher, "heat_limit", MASK_HEAT,
                           self->ref_data_.heat_limit),
       DEBUG_CORE_LIVE_F32(InfantryLauncher, "heat_cooling", MASK_HEAT,
-                          self->ref_data_.heat_cooling),
+                          self->ref_data_.cooling_rate),
+      DEBUG_CORE_LIVE_F32(InfantryLauncher, "heat_error", MASK_HEAT,
+                          self->heat_limit_.current_heat -
+                              self->ref_data_.current_heat_17),
       DEBUG_CORE_LIVE_F32(InfantryLauncher, "heat_single", MASK_HEAT,
                           self->heat_limit_.single_heat),
+      DEBUG_CORE_LIVE_F32(InfantryLauncher, "heat_launched", MASK_HEAT,
+                          self->heat_limit_.launched_num),
+      DEBUG_CORE_LIVE_F32(InfantryLauncher, "heat_progress", MASK_HEAT,
+                          self->shot_progress_),
       DEBUG_CORE_LIVE_F32(InfantryLauncher, "trig_freq", MASK_HEAT,
                           self->trig_freq_),
       DEBUG_CORE_LIVE_F32(InfantryLauncher, "number", MASK_SHOT, self->number_),
