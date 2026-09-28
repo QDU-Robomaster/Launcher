@@ -52,7 +52,7 @@ inline int HeroLauncher::DebugCommand(int argc, char** argv) {
                 text = "READY";
                 break;
             }
-            LibXR::STDIO::Printf("  %s=%s\r\n", field_name, text);
+            LibXR::STDIO::Printf<"  %s=%s\r\n">(field_name, text);
           }),
       DEBUG_CORE_LIVE_CUSTOM(
           HeroLauncher, "trig_mode", MASK_STATE,
@@ -72,7 +72,7 @@ inline int HeroLauncher::DebugCommand(int argc, char** argv) {
                 text = "CONTINUE";
                 break;
             }
-            LibXR::STDIO::Printf("  %s=%s\r\n", field_name, text);
+            LibXR::STDIO::Printf<"  %s=%s\r\n">(field_name, text);
           }),
       DEBUG_CORE_LIVE_F32(HeroLauncher, "dt", MASK_STATE, self->dt_),
       DEBUG_CORE_LIVE_BOOL(HeroLauncher, "is_fire_cmd", MASK_STATE,
