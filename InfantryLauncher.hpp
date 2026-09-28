@@ -1,15 +1,5 @@
 #pragma once
 
-// clang-format off
-/* === MODULE MANIFEST V2 ===
-module_description: No description provided
-constructor_args: []
-template_args: []
-required_hardware: []
-depends: []
-=== END MANIFEST === */
-// clang-format on
-
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -23,7 +13,6 @@ depends: []
 #endif
 #include "Motor.hpp"
 #include "RMMotor.hpp"
-#include "app_framework.hpp"
 #include "cycle_value.hpp"
 #include "libxr_def.hpp"
 #include "libxr_time.hpp"
@@ -32,7 +21,7 @@ depends: []
 #include "timebase.hpp"
 
 namespace launcher::param {
-constexpr float TRIG_STEP = static_cast<float>(M_2PI) / 10.0f;
+constexpr float TRIG_STEP = static_cast<float>(LibXR::TWO_PI) / 10.0f;
 constexpr float JAM_TORQUE = 0.1f;
 constexpr float FRIC_DROP_RPM = 50.0f;
 constexpr float JAM_TOGGLE_INTERVAL_SEC = 0.02f;
@@ -44,6 +33,8 @@ constexpr float HEAT_TICK_SEC = 0.05f;
  * @brief 步兵发射机构实现
  * @details 负责摩擦轮、拨弹盘控制与热量约束发射逻辑。
  *          作为 Launcher<InfantryLauncher> 的内部逻辑类，不拥有线程和事件注册。
+ *          类名与独立 Module QDU-Robomaster/InfantryLauncher 的全局类相同
+ *          （launcher::param 命名空间亦同名），二者不能在同一工程中同时选用。
  */
 class InfantryLauncher {
  public:
@@ -91,8 +82,6 @@ class InfantryLauncher {
 
   /**
    * @brief 步兵发射器构造函数
-   * @param hw 硬件容器
-   * @param app 应用管理器
    * @param motor_fric_front_left 左摩擦轮电机
    * @param motor_fric_front_right 右摩擦轮电机
    * @param motor_fric_back_left 后左摩擦轮电机（当前实现未使用）
@@ -108,8 +97,7 @@ class InfantryLauncher {
    * @param launch_param 发射机构参数
    * @param cmd CMD模块指针
    */
-  InfantryLauncher(LibXR::HardwareContainer& hw, LibXR::ApplicationManager& app,
-                   RMMotor* motor_fric_front_left,
+  InfantryLauncher(RMMotor* motor_fric_front_left,
                    RMMotor* motor_fric_front_right,
                    RMMotor* motor_fric_back_left,
                    RMMotor* motor_fric_back_right, RMMotor* motor_trig,
@@ -129,8 +117,6 @@ class InfantryLauncher {
         pid_fric_0_(pid_param_fric_0),
         pid_fric_1_(pid_param_fric_1),
         param_(launch_param) {
-    UNUSED(hw);
-    UNUSED(app);
     UNUSED(task_stack_depth);
     UNUSED(pid_param_fric_2);
     UNUSED(pid_param_fric_3);
@@ -282,11 +268,6 @@ class InfantryLauncher {
     motor_fric_0_->Relax();
     motor_fric_1_->Relax();
   }
-
-  /**
-   * @brief 监控回调
-   */
-  void OnMonitor() {}
 
   /**
    * @brief 调试命令入口
@@ -624,7 +605,8 @@ class InfantryLauncher {
         target_trig_angle, trig_angle_,
         param_trig_.omega / param_.trig_gear_ratio, dt);
     float omega_limit =
-        static_cast<float>(1.5f * M_2PI * trig_freq_ / param_.num_trig_tooth);
+        static_cast<float>(1.5f * LibXR::TWO_PI * trig_freq_ /
+                           param_.num_trig_tooth);
     float motor_omega_ref =
         std::clamp(plate_omega_ref, -omega_limit, omega_limit);
     out_trig = pid_trig_sp_.Calculate(

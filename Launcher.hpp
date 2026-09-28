@@ -2,78 +2,16 @@
 
 // clang-format off
 /* === MODULE MANIFEST V2 ===
-module_description: No description provided
-constructor_args:
-  - motor_fric_front_left: '@&motor_fric_front_left'
-  - motor_fric_front_right: '@&motor_fric_front_right'
-  - motor_fric_back_left: '@&motor_fric_back_left'
-  - motor_fric_back_right: '@&motor_fric_back_right'
-  - motor_trig: '@&motor_trig'
-  - task_stack_depth: 4096
-  - pid_trig_angle:
-      k: 1.0
-      p: 4000.0
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 4000.0
-      cycle: false
-  - pid_trig_speed:
-      k: 1.0
-      p: 0.0012
-      i: 0.0005
-      d: 0.0
-      i_limit: 1.0
-      out_limit: 1.0
-      cycle: false
-  - pid_fric_speed_0:
-      k: 1.0
-      p: 0.002
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 1.0
-      cycle: false
-  - pid_fric_speed_1:
-      k: 1.0
-      p: 0.002
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 1.0
-      cycle: false
-  - pid_fric_speed_2:
-      k: 1.0
-      p: 0.002
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 1.0
-      cycle: false
-  - pid_fric_speed_3:
-      k: 1.0
-      p: 0.002
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 1.0
-      cycle: false
-  - launcher_param:
-      fric1_setpoint_speed: 4950.0
-      fric2_setpoint_speed: 3820.0
-      trig_gear_ratio: 19.2032
-      num_trig_tooth: 6
-      trig_freq_: 0.0
-  - cmd: '@&cmd'
-  - thread_priority: LibXR::Thread::Priority::HIGH
-template_args:
-  - LauncherType: HeroLauncher
-required_hardware:
-  - dr16
-  - can
+module_description: 发射机构模板外壳，负责控制线程、CMD 失控与恢复事件、摩擦轮模式事件，发射逻辑由模板参数 LauncherType 选择本仓库内的 HeroLauncher 或 InfantryLauncher 实现
 depends:
-  - qdu-future/CMD
-  - qdu-future/RMMotor
+- id: QDU-Robomaster/CMD
+  ref: same-or-dev
+- id: QDU-Robomaster/RMMotor
+  ref: same-or-dev
+- id: QDU-Robomaster/Motor
+  ref: same-or-dev
+- id: QDU-Robomaster/DebugCore
+  ref: same-or-dev
 === END MANIFEST === */
 // clang-format on
 
@@ -83,7 +21,6 @@ depends:
 #include "HeroLauncher.hpp"
 #include "InfantryLauncher.hpp"
 #include "RMMotor.hpp"
-#include "app_framework.hpp"
 #include "event.hpp"
 #include "libxr_cb.hpp"
 #include "libxr_def.hpp"
@@ -91,16 +28,16 @@ depends:
 #include "message.hpp"
 #include "mutex.hpp"
 #include "pid.hpp"
+#include "ramfs.hpp"
 #include "thread.hpp"
 #include "timebase.hpp"
 
 #ifdef DEBUG
 #include "DebugCore.hpp"
-#include "ramfs.hpp"
 #endif
 
 template <class LauncherType>
-class Launcher : public LibXR::Application {
+class Launcher {
  public:
   using LauncherEvent = typename LauncherType::LauncherEvent;
 
@@ -112,30 +49,50 @@ class Launcher : public LibXR::Application {
     float trig_freq_;
   };
 
+  struct Param {
+    uint32_t task_stack_depth;  ///< 控制线程栈深度
+    LibXR::PID<float>::Param pid_trig_angle;    ///< 拨弹角度环参数
+    LibXR::PID<float>::Param pid_trig_speed;    ///< 拨弹速度环参数
+    LibXR::PID<float>::Param pid_fric_speed_0;  ///< 摩擦轮0速度环参数
+    LibXR::PID<float>::Param pid_fric_speed_1;  ///< 摩擦轮1速度环参数
+    LibXR::PID<float>::Param pid_fric_speed_2;  ///< 摩擦轮2速度环参数
+    LibXR::PID<float>::Param pid_fric_speed_3;  ///< 摩擦轮3速度环参数
+    LauncherParam launcher_param;               ///< 发射机构参数
+    LibXR::Thread::Priority thread_priority;    ///< 控制线程优先级
+  };
+
+  /**
+   * @brief 构造发射机构外壳
+   * @param motor_fric_front_left 前左摩擦轮电机
+   * @param motor_fric_front_right 前右摩擦轮电机
+   * @param motor_fric_back_left 后左摩擦轮电机；HeroLauncher 必须提供，
+   *        InfantryLauncher 不使用，可传 nullptr
+   * @param motor_fric_back_right 后右摩擦轮电机；HeroLauncher 必须提供，
+   *        InfantryLauncher 不使用，可传 nullptr
+   * @param motor_trig 拨弹电机
+   * @param cmd CMD 模块
+   * @param ramfs 定义 DEBUG 时注册 "launcher" 调试命令文件的 RamFS；
+   *        未定义 DEBUG 时不使用
+   * @param param 线程、PID 与发射机构参数
+   */
   Launcher(
-      LibXR::HardwareContainer& hw, LibXR::ApplicationManager& app,
-      RMMotor* motor_fric_front_left, RMMotor* motor_fric_front_right,
+      RMMotor& motor_fric_front_left, RMMotor& motor_fric_front_right,
       RMMotor* motor_fric_back_left, RMMotor* motor_fric_back_right,
-      RMMotor* motor_trig, uint32_t task_stack_depth,
-      LibXR::PID<float>::Param pid_trig_angle,
-      LibXR::PID<float>::Param pid_trig_speed,
-      LibXR::PID<float>::Param pid_fric_speed_0,
-      LibXR::PID<float>::Param pid_fric_speed_1,
-      LibXR::PID<float>::Param pid_fric_speed_2,
-      LibXR::PID<float>::Param pid_fric_speed_3, LauncherParam launcher_param,
-      CMD* cmd,
-      LibXR::Thread::Priority thread_priority = LibXR::Thread::Priority::HIGH)
-      : launcher_(hw, app, motor_fric_front_left, motor_fric_front_right,
-                  motor_fric_back_left, motor_fric_back_right, motor_trig,
-                  task_stack_depth, pid_trig_angle, pid_trig_speed,
-                  pid_fric_speed_0, pid_fric_speed_1, pid_fric_speed_2,
-                  pid_fric_speed_3,
+      RMMotor& motor_trig, CMD& cmd, LibXR::RamFS& ramfs,
+      const Param& param = {.task_stack_depth = 4096, .pid_trig_angle = {.k = 1.0f, .p = 4000.0f, .i = 0.0f, .d = 0.0f, .i_limit = 0.0f, .out_limit = 4000.0f, .cycle = false}, .pid_trig_speed = {.k = 1.0f, .p = 0.0012f, .i = 0.0005f, .d = 0.0f, .i_limit = 1.0f, .out_limit = 1.0f, .cycle = false}, .pid_fric_speed_0 = {.k = 1.0f, .p = 0.002f, .i = 0.0f, .d = 0.0f, .i_limit = 0.0f, .out_limit = 1.0f, .cycle = false}, .pid_fric_speed_1 = {.k = 1.0f, .p = 0.002f, .i = 0.0f, .d = 0.0f, .i_limit = 0.0f, .out_limit = 1.0f, .cycle = false}, .pid_fric_speed_2 = {.k = 1.0f, .p = 0.002f, .i = 0.0f, .d = 0.0f, .i_limit = 0.0f, .out_limit = 1.0f, .cycle = false}, .pid_fric_speed_3 = {.k = 1.0f, .p = 0.002f, .i = 0.0f, .d = 0.0f, .i_limit = 0.0f, .out_limit = 1.0f, .cycle = false}, .launcher_param = {.fric1_setpoint_speed = 4950.0f, .fric2_setpoint_speed = 3820.0f, .trig_gear_ratio = 19.2032f, .num_trig_tooth = 6, .trig_freq_ = 0.0f}, .thread_priority = LibXR::Thread::Priority::HIGH})
+      : launcher_(&motor_fric_front_left, &motor_fric_front_right,
+                  motor_fric_back_left, motor_fric_back_right, &motor_trig,
+                  param.task_stack_depth, param.pid_trig_angle,
+                  param.pid_trig_speed, param.pid_fric_speed_0,
+                  param.pid_fric_speed_1, param.pid_fric_speed_2,
+                  param.pid_fric_speed_3,
                   typename LauncherType::LauncherParam{
-                      launcher_param.fric1_setpoint_speed,
-                      launcher_param.fric2_setpoint_speed,
-                      launcher_param.trig_gear_ratio,
-                      launcher_param.num_trig_tooth, launcher_param.trig_freq_},
-                  cmd)
+                      param.launcher_param.fric1_setpoint_speed,
+                      param.launcher_param.fric2_setpoint_speed,
+                      param.launcher_param.trig_gear_ratio,
+                      param.launcher_param.num_trig_tooth,
+                      param.launcher_param.trig_freq_},
+                  &cmd)
 #ifdef DEBUG
         ,
         cmd_file_(LibXR::RamFS::CreateFile(
@@ -145,14 +102,14 @@ class Launcher : public LibXR::Application {
             &launcher_))
 #endif
   {
-    UNUSED(app);
-
 #ifdef DEBUG
-    hw.template FindOrExit<LibXR::RamFS>({"ramfs"})->Add(cmd_file_);
+    ramfs.Add(cmd_file_);
+#else
+    UNUSED(ramfs);
 #endif
 
-    thread_.Create(this, ThreadFunc, "LauncherThread", task_stack_depth,
-                   thread_priority);
+    thread_.Create(this, ThreadFunc, "LauncherThread", param.task_stack_depth,
+                   param.thread_priority);
 
     auto lost_ctrl_callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, Launcher* self, uint32_t event_id) {
@@ -175,8 +132,8 @@ class Launcher : public LibXR::Application {
         },
         this);
 
-    cmd->GetEvent().Register(CMD::CMD_EVENT_LOST_CTRL, lost_ctrl_callback);
-    cmd->GetEvent().Register(CMD::CMD_EVENT_START_CTRL, start_ctrl_callback);
+    cmd.GetEvent().Register(CMD::CMD_EVENT_LOST_CTRL, lost_ctrl_callback);
+    cmd.GetEvent().Register(CMD::CMD_EVENT_START_CTRL, start_ctrl_callback);
 
     auto event_callback = LibXR::Callback<uint32_t>::Create(
         [](bool in_isr, Launcher* self, uint32_t event_id) {
@@ -198,8 +155,6 @@ class Launcher : public LibXR::Application {
   }
 
   LibXR::Event& GetEvent() { return launcher_event_; }
-
-  void OnMonitor() override { launcher_.OnMonitor(); }
 
  private:
   LauncherType launcher_;

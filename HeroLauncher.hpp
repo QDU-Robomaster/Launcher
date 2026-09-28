@@ -1,88 +1,11 @@
 #pragma once
 
-// clang-format off
-/* === MODULE MANIFEST V2 ===
-module_description: No description provided
-constructor_args:
-  - motor_fric_front_left: '@&motor_fric_front_left'
-  - motor_fric_front_right: '@&motor_fric_front_right'
-  - motor_fric_back_left: '@&motor_fric_back_left'
-  - motor_fric_back_right: '@&motor_fric_back_right'
-  - motor_trig: '@&motor_trig'
-  - task_stack_depth: 4096
-  - pid_trig_angle:
-      k: 1.0
-      p: 4000.0
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 4000.0
-      cycle: false
-  - pid_trig_speed:
-      k: 1.0
-      p: 0.0012
-      i: 0.0005
-      d: 0.0
-      i_limit: 1.0
-      out_limit: 1.0
-      cycle: false
-  - pid_fric_speed_0:
-      k: 1.0
-      p: 0.002
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 1.0
-      cycle: false
-  - pid_fric_speed_1:
-      k: 1.0
-      p: 0.002
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 1.0
-      cycle: false
-  - pid_fric_speed_2:
-      k: 1.0
-      p: 0.002
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 1.0
-      cycle: false
-  - pid_fric_speed_3:
-      k: 1.0
-      p: 0.002
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 1.0
-      cycle: false
-  - launcher_param:
-      fric1_setpoint_speed: 4950.0
-      fric2_setpoint_speed: 3820.0
-      trig_gear_ratio: 19.2032
-      num_trig_tooth: 6
-      trig_freq_: 0.0
-  - cmd: '@&cmd'
-template_args:
-  - LauncherType: HeroLauncher
-required_hardware:
-  - dr16
-  - can
-depends:
-  - qdu-future/CMD
-  - qdu-future/RMMotor
-=== END MANIFEST === */
-// clang-format on
-
 #include <algorithm>
 #include <cstdint>
 
 #include "CMD.hpp"
 #include "Motor.hpp"
 #include "RMMotor.hpp"
-#include "app_framework.hpp"
 #include "cycle_value.hpp"
 #include "libxr_def.hpp"
 #include "libxr_time.hpp"
@@ -98,12 +21,14 @@ depends:
  * @brief 英雄发射机构实现
  * @details 负责摩擦轮、拨弹盘控制与热量约束发射逻辑。
  *          作为 Launcher<HeroLauncher> 的内部逻辑类，不拥有线程和事件注册。
+ *          类名与独立 Module QDU-Robomaster/HeroLauncher 的全局类相同，
+ *          二者不能在同一工程中同时选用。
  */
 class HeroLauncher {
  public:
   static constexpr float TRIG_ZERO_ANGLE_OFFSET = 0.50f;
   static constexpr float TRIG_LOADING_ANGLE_STEP =
-      static_cast<float>(M_2PI) / 1002.0f;
+      static_cast<float>(LibXR::TWO_PI) / 1002.0f;
   static constexpr float M3508_TORQUE_CONSTANT = 0.3f;
 
   enum class TrigMode : uint8_t {
@@ -153,12 +78,10 @@ class HeroLauncher {
 
   /**
    * @brief 构造 HeroLauncher
-   * @param hw 硬件容器
-   * @param app 应用管理器
    * @param motor_fric_front_left 前左摩擦轮电机
    * @param motor_fric_front_right 前右摩擦轮电机
-   * @param motor_fric_back_left 后左摩擦轮电机
-   * @param motor_fric_back_right 后右摩擦轮电机
+   * @param motor_fric_back_left 后左摩擦轮电机（必须提供）
+   * @param motor_fric_back_right 后右摩擦轮电机（必须提供）
    * @param motor_trig 拨弹电机
    * @param task_stack_depth 线程栈深（由外壳使用）
    * @param trig_angle_pid 拨弹角度环参数
@@ -167,8 +90,7 @@ class HeroLauncher {
    * @param launcher_param 发射器参数
    * @param cmd CMD 模块指针
    */
-  HeroLauncher(LibXR::HardwareContainer& hw, LibXR::ApplicationManager& app,
-               RMMotor* motor_fric_front_left, RMMotor* motor_fric_front_right,
+  HeroLauncher(RMMotor* motor_fric_front_left, RMMotor* motor_fric_front_right,
                RMMotor* motor_fric_back_left, RMMotor* motor_fric_back_right,
                RMMotor* motor_trig, uint32_t task_stack_depth,
                LibXR::PID<float>::Param trig_angle_pid,
@@ -188,10 +110,12 @@ class HeroLauncher {
         trig_speed_pid_(trig_speed_pid),
         fric_speed_pid_{fric_speed_pid_0, fric_speed_pid_1, fric_speed_pid_2,
                         fric_speed_pid_3} {
-    UNUSED(hw);
-    UNUSED(app);
     UNUSED(task_stack_depth);
     UNUSED(cmd);
+
+    /* 英雄发射机构的控制循环无条件访问四个摩擦轮电机 */
+    ASSERT(motor_fric_back_left != nullptr);
+    ASSERT(motor_fric_back_right != nullptr);
 
     last_wakeup_ = LibXR::Timebase::GetMicroseconds();
   }
@@ -305,8 +229,6 @@ class HeroLauncher {
     // 重置延迟计算
     real_launch_delay_ = 0.0f;
   }
-
-  void OnMonitor() {}
 
   void SetControlDt(float dt) { dt_ = dt; }
 
@@ -514,7 +436,7 @@ class HeroLauncher {
       mark_launch_ = false;
       if (!enable_fire_) {
         if (heat_ctrl_.available_shot) {
-          trig_setpoint_angle_ -= static_cast<float>(M_2PI) /
+          trig_setpoint_angle_ -= static_cast<float>(LibXR::TWO_PI) /
                                   static_cast<float>(param_.num_trig_tooth);
 
           enable_fire_ = true;
