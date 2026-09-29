@@ -13,9 +13,10 @@
 ## 工作方式
 
 - 构造时创建控制线程 `LauncherThread`，栈深 `task_stack_depth`，优先级 `thread_priority`，
-  周期 2 ms。每周期读取 `launcher_cmd` 最新数据（`CMD::LauncherCMD`，`isfire` 为开火命令），
+  周期 2 ms。每周期读取发射命令 Topic 的最新数据（`CMD::LauncherCMD`，`isfire` 为开火命令），
   用微秒时间戳计算控制周期 `dt`，然后依次执行 `Update()`（电机反馈）、`Solve()`（状态机与热量）
-  和 `Control()`（PID 输出）。订阅的 Topic 名固定为 `launcher_cmd`，即 `CMD` 的默认发射命令 Topic。
+  和 `Control()`（PID 输出）。订阅的 Topic 名由 `param.launcher_cmd_topic_name` 指定（默认
+  `launcher_cmd`），须与 `CMD` 的 `launcher_cmd_topic_name` 一致。
 - CMD 事件：`CMD_EVENT_LOST_CTRL` 时调用 `LostCtrl()` 复位到安全状态；`CMD_EVENT_START_CTRL` 时
   切到 `SET_FRICMODE_RELAX`。
 - 摩擦轮模式：`GetEvent()` 返回的 `LibXR::Event` 上注册了 `LauncherType::LauncherEvent` 的
@@ -106,6 +107,7 @@ Launcher(RMMotor& motor_fric_front_left, RMMotor& motor_fric_front_right,
   - `num_trig_tooth`：拨盘齿数，默认 6；
   - `trig_freq_`：期望弹频，Hz（仅步兵），默认 0。
 - `thread_priority`：控制线程优先级，默认 `LibXR::Thread::Priority::HIGH`。
+- `launcher_cmd_topic_name`：订阅的发射控制命令 Topic，默认 `"launcher_cmd"`。
 
 PID 参数字段依次为 `k`、`p`、`i`、`d`、`i_limit`、`out_limit`、`cycle`（`LibXR::PID<float>::Param`）。
 
@@ -198,6 +200,7 @@ modules:
             num_trig_tooth: '6'
             trig_freq_: 0.0f
           thread_priority: LibXR::Thread::Priority::HIGH
+          launcher_cmd_topic_name: '"launcher_cmd"'
 ```
 
 `motor_*` 为 `QDU-Robomaster/RMMotor` 实例，`cmd` 为 `QDU-Robomaster/CMD` 实例，都必须在
