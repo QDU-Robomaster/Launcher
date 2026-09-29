@@ -59,6 +59,7 @@ class Launcher {
     LibXR::PID<float>::Param pid_fric_speed_3;  ///< 摩擦轮3速度环参数
     LauncherParam launcher_param;               ///< 发射机构参数
     LibXR::Thread::Priority thread_priority;    ///< 控制线程优先级
+    const char* launcher_cmd_topic_name;        ///< 订阅的发射控制命令 Topic 名称
   };
 
   /**
@@ -79,7 +80,7 @@ class Launcher {
       RMMotor& motor_fric_front_left, RMMotor& motor_fric_front_right,
       RMMotor* motor_fric_back_left, RMMotor* motor_fric_back_right,
       RMMotor& motor_trig, CMD& cmd, LibXR::RamFS& ramfs,
-      const Param& param = {.task_stack_depth = 4096, .pid_trig_angle = {.k = 1.0f, .p = 4000.0f, .i = 0.0f, .d = 0.0f, .i_limit = 0.0f, .out_limit = 4000.0f, .cycle = false}, .pid_trig_speed = {.k = 1.0f, .p = 0.0012f, .i = 0.0005f, .d = 0.0f, .i_limit = 1.0f, .out_limit = 1.0f, .cycle = false}, .pid_fric_speed_0 = {.k = 1.0f, .p = 0.002f, .i = 0.0f, .d = 0.0f, .i_limit = 0.0f, .out_limit = 1.0f, .cycle = false}, .pid_fric_speed_1 = {.k = 1.0f, .p = 0.002f, .i = 0.0f, .d = 0.0f, .i_limit = 0.0f, .out_limit = 1.0f, .cycle = false}, .pid_fric_speed_2 = {.k = 1.0f, .p = 0.002f, .i = 0.0f, .d = 0.0f, .i_limit = 0.0f, .out_limit = 1.0f, .cycle = false}, .pid_fric_speed_3 = {.k = 1.0f, .p = 0.002f, .i = 0.0f, .d = 0.0f, .i_limit = 0.0f, .out_limit = 1.0f, .cycle = false}, .launcher_param = {.fric1_setpoint_speed = 4950.0f, .fric2_setpoint_speed = 3820.0f, .trig_gear_ratio = 19.2032f, .num_trig_tooth = 6, .trig_freq_ = 0.0f}, .thread_priority = LibXR::Thread::Priority::HIGH})
+      const Param& param = {.task_stack_depth = 4096, .pid_trig_angle = {.k = 1.0f, .p = 4000.0f, .i = 0.0f, .d = 0.0f, .i_limit = 0.0f, .out_limit = 4000.0f, .cycle = false}, .pid_trig_speed = {.k = 1.0f, .p = 0.0012f, .i = 0.0005f, .d = 0.0f, .i_limit = 1.0f, .out_limit = 1.0f, .cycle = false}, .pid_fric_speed_0 = {.k = 1.0f, .p = 0.002f, .i = 0.0f, .d = 0.0f, .i_limit = 0.0f, .out_limit = 1.0f, .cycle = false}, .pid_fric_speed_1 = {.k = 1.0f, .p = 0.002f, .i = 0.0f, .d = 0.0f, .i_limit = 0.0f, .out_limit = 1.0f, .cycle = false}, .pid_fric_speed_2 = {.k = 1.0f, .p = 0.002f, .i = 0.0f, .d = 0.0f, .i_limit = 0.0f, .out_limit = 1.0f, .cycle = false}, .pid_fric_speed_3 = {.k = 1.0f, .p = 0.002f, .i = 0.0f, .d = 0.0f, .i_limit = 0.0f, .out_limit = 1.0f, .cycle = false}, .launcher_param = {.fric1_setpoint_speed = 4950.0f, .fric2_setpoint_speed = 3820.0f, .trig_gear_ratio = 19.2032f, .num_trig_tooth = 6, .trig_freq_ = 0.0f}, .thread_priority = LibXR::Thread::Priority::HIGH, .launcher_cmd_topic_name = "launcher_cmd"})
       : launcher_(&motor_fric_front_left, &motor_fric_front_right,
                   motor_fric_back_left, motor_fric_back_right, &motor_trig,
                   param.task_stack_depth, param.pid_trig_angle,
@@ -108,6 +109,7 @@ class Launcher {
     UNUSED(ramfs);
 #endif
 
+    launcher_cmd_topic_name_ = param.launcher_cmd_topic_name;
     thread_.Create(this, ThreadFunc, "LauncherThread", param.task_stack_depth,
                    param.thread_priority);
 
@@ -159,6 +161,7 @@ class Launcher {
  private:
   LauncherType launcher_;
   LibXR::Event launcher_event_;
+  const char* launcher_cmd_topic_name_ = nullptr;
   LibXR::Thread thread_;
   LibXR::Mutex mutex_;
 
@@ -167,7 +170,7 @@ class Launcher {
 #endif
 
   static void ThreadFunc(Launcher* self) {
-    LibXR::Topic::ASyncSubscriber<CMD::LauncherCMD> cmd_sub("launcher_cmd");
+    LibXR::Topic::ASyncSubscriber<CMD::LauncherCMD> cmd_sub(self->launcher_cmd_topic_name_);
     cmd_sub.StartWaiting();
     self->last_wakeup_time_ = LibXR::Timebase::GetMilliseconds();
     self->last_online_time_ = LibXR::Timebase::GetMicroseconds();
