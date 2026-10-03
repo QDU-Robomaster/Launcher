@@ -69,12 +69,7 @@ launcher monitor <time_ms> [interval_ms] [state|motor|heat|shot|full]
 
 视图：`state`（模式、开火命令、`dt` 等）、`motor`（电机反馈与目标）、`heat`（热量）、`shot`（发射计数、出弹延时等）、`full`（全部，默认）。命令解析与字段打印由 `QDU-Robomaster/DebugCore` 提供。
 
-When `DEBUG` is defined, the `launcher` command in the RamFS terminal shows the live state:
-
-```sh
-launcher once [state|motor|heat|shot|full]
-launcher monitor <time_ms> [interval_ms] [state|motor|heat|shot|full]
-```
+When `DEBUG` is defined, the `launcher` command in the RamFS terminal shows the live state with the commands in the code block above.
 
 Views: `state` (mode, fire command, `dt` and so on), `motor` (motor feedback and targets), `heat` (heat), `shot` (shot counts, round latency and so on) and `full` (everything, the default). Command parsing and field printing are provided by `QDU-Robomaster/DebugCore`.
 
