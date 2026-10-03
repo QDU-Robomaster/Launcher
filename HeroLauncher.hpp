@@ -20,9 +20,7 @@
 /**
  * @brief 英雄发射机构实现
  * @details 负责摩擦轮、拨弹盘控制与热量约束发射逻辑。
- *          作为 Launcher<HeroLauncher> 的内部逻辑类，不拥有线程和事件注册。
- *          类名与独立 Module QDU-Robomaster/HeroLauncher 的全局类相同，
- *          二者不能在同一工程中同时选用。
+ *          作为 Launcher<HeroLauncher> 的内部逻辑类，线程和事件注册由外壳提供。
  */
 class HeroLauncher {
  public:
@@ -232,10 +230,10 @@ class HeroLauncher {
 
   void SetControlDt(float dt) { dt_ = dt; }
 
+#ifdef DEBUG
   /**
    * @brief 调试命令入口
    */
-#ifdef DEBUG
   int DebugCommand(int argc, char** argv);
 #endif
 
@@ -330,8 +328,6 @@ class HeroLauncher {
       Motor::MotorCmd{.mode = Motor::ControlMode::MODE_CURRENT,
                       .reduction_ratio = 19.2032f,
                       .velocity = 0};
-
-  /*----------工具函数--------------------------------*/
 
   /**
    * @brief 更新拨弹盘模式
@@ -449,7 +445,7 @@ class HeroLauncher {
     }
     now_ = LibXR::Timebase::GetMilliseconds();
 
-    // 添加发射超时检测（超过100毫秒未检测到发弹则重置状态）
+    // 发射超时检测：超过 100 ms 未检测到出弹则重置状态
     if (start_fire_time_ > 0 && (now_ - start_fire_time_ > 100) &&
         !mark_launch_) {
       fire_flag_ = false;
@@ -519,10 +515,10 @@ class HeroLauncher {
    */
   void HeatLimit() {
     heat_ctrl_.heat_limit = referee_data_.heat_limit;
-    heat_ctrl_.heat_limit = 129.0f;  // for debug
+    heat_ctrl_.heat_limit = 129.0f;  // 调试用固定值
     heat_ctrl_.heat_increase = 100.0f;
     heat_ctrl_.cooling_rate = referee_data_.cooling_rate;
-    heat_ctrl_.cooling_rate = 13.0f;  // for debug
+    heat_ctrl_.cooling_rate = 13.0f;  // 调试用固定值
     if (fired_ >= 1) {
       heat_ctrl_.heat += heat_ctrl_.heat_increase;
       fired_ = 0;

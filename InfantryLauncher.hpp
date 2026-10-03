@@ -32,9 +32,7 @@ constexpr float HEAT_TICK_SEC = 0.05f;
 /**
  * @brief 步兵发射机构实现
  * @details 负责摩擦轮、拨弹盘控制与热量约束发射逻辑。
- *          作为 Launcher<InfantryLauncher> 的内部逻辑类，不拥有线程和事件注册。
- *          类名与独立 Module QDU-Robomaster/InfantryLauncher 的全局类相同
- *          （launcher::param 命名空间亦同名），二者不能在同一工程中同时选用。
+ *          作为 Launcher<InfantryLauncher> 的内部逻辑类，线程和事件注册由外壳提供。
  */
 class InfantryLauncher {
  public:
@@ -84,16 +82,16 @@ class InfantryLauncher {
    * @brief 步兵发射器构造函数
    * @param motor_fric_front_left 左摩擦轮电机
    * @param motor_fric_front_right 右摩擦轮电机
-   * @param motor_fric_back_left 后左摩擦轮电机（当前实现未使用）
-   * @param motor_fric_back_right 后右摩擦轮电机（当前实现未使用）
+   * @param motor_fric_back_left 后左摩擦轮电机（此实现不使用）
+   * @param motor_fric_back_right 后右摩擦轮电机（此实现不使用）
    * @param motor_trig 拨弹电机
    * @param task_stack_depth 控制线程栈深度（由外壳使用）
    * @param pid_param_trig_angle 拨弹角度环参数
    * @param pid_param_trig_speed 拨弹速度环参数
    * @param pid_param_fric_0 摩擦轮0 PID参数
    * @param pid_param_fric_1 摩擦轮1 PID参数
-   * @param pid_param_fric_2 预留参数（当前实现未使用）
-   * @param pid_param_fric_3 预留参数（当前实现未使用）
+   * @param pid_param_fric_2 预留参数（此实现不使用）
+   * @param pid_param_fric_3 预留参数（此实现不使用）
    * @param launch_param 发射机构参数
    * @param cmd CMD模块指针
    */
@@ -269,10 +267,10 @@ class InfantryLauncher {
     motor_fric_1_->Relax();
   }
 
+#ifdef DEBUG
   /**
    * @brief 调试命令入口
    */
-#ifdef DEBUG
   int DebugCommand(int argc, char** argv);
 #endif
 
@@ -339,8 +337,6 @@ class InfantryLauncher {
       .heat_threshold = 0.0f,
       .allow_fire = true,
   };
-
-  /*-----------------工具函数---------------------------------------------------*/
 
   /**
    * @brief 更新发射器总状态

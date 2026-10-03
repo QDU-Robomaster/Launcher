@@ -2,7 +2,7 @@
 
 // clang-format off
 /* === MODULE MANIFEST V2 ===
-module_description: 发射机构模板外壳，负责控制线程、CMD 失控与恢复事件、摩擦轮模式事件，发射逻辑由模板参数 LauncherType 选择本仓库内的 HeroLauncher 或 InfantryLauncher 实现
+module_description: 发射机构总控模块：模板外壳提供控制线程与事件，发射逻辑由 HeroLauncher 或 InfantryLauncher 实现 / Launcher master Module whose template shell provides the control thread and the events, with the launch logic implemented by HeroLauncher or InfantryLauncher
 depends:
 - id: QDU-Robomaster/CMD
   ref: same-or-dev
