@@ -36,45 +36,94 @@ depends:
 #include "DebugCore.hpp"
 #endif
 
+/**
+ * @brief 发射机构总控模块：模板外壳提供控制线程与事件，发射逻辑由
+ *        `LauncherType` 实现。
+ *        Launcher master Module whose template shell provides the control
+ *        thread and the events, with the launch logic implemented by
+ *        `LauncherType`.
+ *
+ * @tparam LauncherType 发射逻辑实现，`HeroLauncher` 或 `InfantryLauncher`。
+ *                      Launch logic implementation, `HeroLauncher` or
+ *                      `InfantryLauncher`.
+ */
 template <class LauncherType>
 class Launcher {
  public:
+  /// 发射机构事件类型，取自 `LauncherType`
+  /// Launcher event type taken from `LauncherType`
   using LauncherEvent = typename LauncherType::LauncherEvent;
 
+  /**
+   * @brief 发射机构参数。
+   *        Launcher parameters.
+   */
   struct LauncherParam {
-    float fric1_setpoint_speed;
-    float fric2_setpoint_speed;
-    float trig_gear_ratio;
-    uint8_t num_trig_tooth;
-    float trig_freq_;
-  };
-
-  struct Param {
-    uint32_t task_stack_depth;  ///< 控制线程栈深度
-    LibXR::PID<float>::Param pid_trig_angle;    ///< 拨弹角度环参数
-    LibXR::PID<float>::Param pid_trig_speed;    ///< 拨弹速度环参数
-    LibXR::PID<float>::Param pid_fric_speed_0;  ///< 摩擦轮0速度环参数
-    LibXR::PID<float>::Param pid_fric_speed_1;  ///< 摩擦轮1速度环参数
-    LibXR::PID<float>::Param pid_fric_speed_2;  ///< 摩擦轮2速度环参数
-    LibXR::PID<float>::Param pid_fric_speed_3;  ///< 摩擦轮3速度环参数
-    LauncherParam launcher_param;               ///< 发射机构参数
-    LibXR::Thread::Priority thread_priority;    ///< 控制线程优先级
-    const char* launcher_cmd_topic_name;        ///< 订阅的发射控制命令 Topic 名称
+    float fric1_setpoint_speed;  ///< 一级摩擦轮目标转速
+                                 ///< First-stage wheel target speed
+    float fric2_setpoint_speed;  ///< 二级摩擦轮目标转速，HeroLauncher 使用
+                                 ///< Second-stage wheel target speed, used by
+                                 ///< HeroLauncher
+    float trig_gear_ratio;       ///< 拨弹电机减速比
+                                 ///< Trigger motor reduction ratio
+    uint8_t num_trig_tooth;      ///< 拨弹盘齿数
+                                 ///< Number of trigger disc teeth
+    float trig_freq_;            ///< 期望弹频 (Hz)，InfantryLauncher 使用
+                       ///< Expected fire rate (Hz), used by InfantryLauncher
   };
 
   /**
-   * @brief 构造发射机构外壳
-   * @param motor_fric_front_left 前左摩擦轮电机
-   * @param motor_fric_front_right 前右摩擦轮电机
-   * @param motor_fric_back_left 后左摩擦轮电机；HeroLauncher 必须提供，
-   *        InfantryLauncher 不使用，可传 nullptr
-   * @param motor_fric_back_right 后右摩擦轮电机；HeroLauncher 必须提供，
-   *        InfantryLauncher 不使用，可传 nullptr
-   * @param motor_trig 拨弹电机
-   * @param cmd CMD 模块
-   * @param ramfs 定义 DEBUG 时注册 "launcher" 调试命令文件的 RamFS；
-   *        未定义 DEBUG 时不使用
-   * @param param 线程、PID 与发射机构参数
+   * @brief Launcher 配置参数。
+   *        Launcher configuration parameters.
+   */
+  struct Param {
+    uint32_t task_stack_depth;                  ///< 控制线程栈深
+                                                ///< Control thread stack depth
+    LibXR::PID<float>::Param pid_trig_angle;    ///< 拨弹角度环 PID
+                                                ///< Trigger angle-loop PID
+    LibXR::PID<float>::Param pid_trig_speed;    ///< 拨弹速度环 PID
+                                                ///< Trigger speed-loop PID
+    LibXR::PID<float>::Param pid_fric_speed_0;  ///< 摩擦轮 0 速度环 PID
+                                                ///< Wheel 0 speed-loop PID
+    LibXR::PID<float>::Param pid_fric_speed_1;  ///< 摩擦轮 1 速度环 PID
+                                                ///< Wheel 1 speed-loop PID
+    LibXR::PID<float>::Param pid_fric_speed_2;  ///< 摩擦轮 2 速度环 PID
+                                                ///< Wheel 2 speed-loop PID
+    LibXR::PID<float>::Param pid_fric_speed_3;  ///< 摩擦轮 3 速度环 PID
+                                                ///< Wheel 3 speed-loop PID
+    LauncherParam launcher_param;               ///< 发射机构参数
+                                                ///< Launcher parameters
+    LibXR::Thread::Priority thread_priority;    ///< 控制线程优先级
+                                                ///< Control thread priority
+    const char* launcher_cmd_topic_name;  ///< 订阅的发射控制命令 Topic 名称
+                                          ///< Name of the subscribed launcher
+                                          ///< command Topic
+  };
+
+  /**
+   * @brief 构造 Launcher，创建控制线程并注册 CMD 事件与摩擦轮模式事件。
+   *        Construct Launcher, create the control thread and register the CMD
+   *        events and the friction wheel mode events.
+   *
+   * @param motor_fric_front_left 前左摩擦轮电机。
+   *                              Front-left friction wheel motor.
+   * @param motor_fric_front_right 前右摩擦轮电机。
+   *                               Front-right friction wheel motor.
+   * @param motor_fric_back_left 后左摩擦轮电机，HeroLauncher 使用。
+   *                             Back-left friction wheel motor, used by
+   *                             HeroLauncher.
+   * @param motor_fric_back_right 后右摩擦轮电机，HeroLauncher 使用。
+   *                              Back-right friction wheel motor, used by
+   *                              HeroLauncher.
+   * @param motor_trig 拨弹电机。
+   *                   Trigger motor.
+   * @param cmd CMD 实例。
+   *            CMD instance.
+   * @param ramfs 定义 DEBUG 时在其中注册 "launcher" 调试命令文件的 RamFS。
+   *              RamFS in which the "launcher" debug command file is registered
+   *              when DEBUG is defined.
+   * @param param 线程、PID 与发射机构参数。
+   *              Thread, PID and launcher parameters.
    */
   Launcher(
       RMMotor& motor_fric_front_left, RMMotor& motor_fric_front_right,
@@ -156,6 +205,14 @@ class Launcher {
         event_callback);
   }
 
+  /**
+   * @brief 获取发射机构事件对象，摩擦轮模式事件注册在其上。
+   *        Get the launcher event object on which the friction wheel mode
+   *        events are registered.
+   *
+   * @return 事件对象的引用。
+   *         Reference to the event object.
+   */
   LibXR::Event& GetEvent() { return launcher_event_; }
 
  private:

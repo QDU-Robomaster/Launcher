@@ -21,79 +21,145 @@
 #include "timebase.hpp"
 
 namespace launcher::param {
+/// 拨弹盘每发转过的角度 (rad)
+/// Angle the trigger disc advances per round (rad)
 constexpr float TRIG_STEP = static_cast<float>(LibXR::TWO_PI) / 10.0f;
+/// 判定卡弹的拨弹电机力矩
+/// Trigger motor torque that is taken as a jam
 constexpr float JAM_TORQUE = 0.1f;
+/// 判定出弹时摩擦轮转速相对目标的下降量 (rpm)
+/// Friction wheel speed drop below the target taken as a round leaving (rpm)
 constexpr float FRIC_DROP_RPM = 50.0f;
+/// 卡弹处理中正反转的切换间隔 (s)
+/// Direction switching interval during jam handling (s)
 constexpr float JAM_TOGGLE_INTERVAL_SEC = 0.02f;
+/// 按住超过该时间转为连发 (s)
+/// Holding for longer than this switches to continuous fire (s)
 constexpr float LONG_PRESS_THRESHOLD_SEC = 0.5f;
+/// 热量控制的更新周期 (s)
+/// Update period of the heat control (s)
 constexpr float HEAT_TICK_SEC = 0.05f;
 }  // namespace launcher::param
 
 /**
- * @brief 步兵发射机构实现
- * @details 负责摩擦轮、拨弹盘控制与热量约束发射逻辑。
- *          作为 Launcher<InfantryLauncher> 的内部逻辑类，线程和事件注册由外壳提供。
+ * @brief 步兵发射机构实现：摩擦轮与拨弹盘控制，按热量限制射频。
+ *        Infantry launcher implementation: friction wheel and trigger disc
+ *        control, with the fire rate limited by the heat.
+ *
+ * 作为 Launcher<InfantryLauncher> 的内部逻辑类，线程和事件注册由外壳提供。
+ * As the internal logic class of Launcher<InfantryLauncher>, the thread and
+ * the event registration are provided by the shell.
  */
 class InfantryLauncher {
  public:
+  /**
+   * @brief 发射状态。
+   *        Launcher states.
+   */
   enum class LauncherState : uint8_t {
-    RELAX,
-    STOP,
-    NORMAL,
-    JAMMED,
-  };
-
-  enum class LauncherEvent : uint8_t {
-    SET_FRICMODE_RELAX,
-    SET_FRICMODE_SAFE,
-    SET_FRICMODE_READY,
-  };
-
-  enum class TrigMode : uint8_t {
-    RELAX,
-    SAFE,
-    SINGLE,
-    CONTINUE,
-    JAM,
-  };
-
-  struct RefereeData {
-    float heat_limit;
-    float heat_cooling;
-  };
-
-  struct LauncherParam {
-    float fric1_setpoint_speed;
-    float fric2_setpoint_speed;
-    float trig_gear_ratio;
-    uint8_t num_trig_tooth;
-    float expect_trig_freq_;
-  };
-
-  struct HeatLimit {
-    float single_heat;
-    float launched_num;
-    float current_heat;
-    float heat_threshold;
-    bool allow_fire;
+    RELAX,   ///< 放松 Relax
+    STOP,    ///< 停止发射 Firing stopped
+    NORMAL,  ///< 正常发射 Normal firing
+    JAMMED,  ///< 卡弹 Jammed
   };
 
   /**
-   * @brief 步兵发射器构造函数
-   * @param motor_fric_front_left 左摩擦轮电机
-   * @param motor_fric_front_right 右摩擦轮电机
-   * @param motor_fric_back_left 后左摩擦轮电机（此实现不使用）
-   * @param motor_fric_back_right 后右摩擦轮电机（此实现不使用）
-   * @param motor_trig 拨弹电机
-   * @param task_stack_depth 控制线程栈深度（由外壳使用）
-   * @param pid_param_trig_angle 拨弹角度环参数
-   * @param pid_param_trig_speed 拨弹速度环参数
-   * @param pid_param_fric_0 摩擦轮0 PID参数
-   * @param pid_param_fric_1 摩擦轮1 PID参数
-   * @param pid_param_fric_2 预留参数（此实现不使用）
-   * @param pid_param_fric_3 预留参数（此实现不使用）
-   * @param launch_param 发射机构参数
-   * @param cmd CMD模块指针
+   * @brief 摩擦轮模式事件，数值同时是事件 ID。
+   *        Friction wheel mode events; the values are also the event IDs.
+   */
+  enum class LauncherEvent : uint8_t {
+    SET_FRICMODE_RELAX,  ///< 放松 Relax
+    SET_FRICMODE_SAFE,   ///< 安全：目标转速为 0 Safe: target speed 0
+    SET_FRICMODE_READY,  ///< 就绪 Ready
+  };
+
+  /**
+   * @brief 拨弹模式。
+   *        Trigger modes.
+   */
+  enum class TrigMode : uint8_t {
+    RELAX,     ///< 放松 Relax
+    SAFE,      ///< 安全：保持当前位置 Safe: hold the current position
+    SINGLE,    ///< 单发 Single shot
+    CONTINUE,  ///< 连发 Continuous fire
+    JAM,       ///< 卡弹处理 Jam handling
+  };
+
+  /**
+   * @brief 热量相关的裁判系统数据。
+   *        Heat-related referee system data.
+   */
+  struct RefereeData {
+    float heat_limit;    ///< 热量上限 Heat limit
+    float heat_cooling;  ///< 冷却值 Cooling value
+  };
+
+  /**
+   * @brief 发射器参数。
+   *        Launcher parameters.
+   */
+  struct LauncherParam {
+    float fric1_setpoint_speed;  ///< 摩擦轮目标转速
+                                 ///< Friction wheel target speed
+    float fric2_setpoint_speed;  ///< 二级摩擦轮目标转速，此实现不使用
+                                 ///< Second-stage wheel target speed, not used
+                                 ///< by this implementation
+    float trig_gear_ratio;       ///< 拨弹电机减速比
+                                 ///< Trigger motor reduction ratio
+    uint8_t num_trig_tooth;      ///< 拨弹盘齿数
+                                 ///< Number of trigger disc teeth
+    float expect_trig_freq_;     ///< 期望弹频 (Hz)
+                                 ///< Expected fire rate (Hz)
+  };
+
+  /**
+   * @brief 热量控制状态。
+   *        Heat control state.
+   */
+  struct HeatLimit {
+    float single_heat;     ///< 单发热量 Heat per round
+    float launched_num;    ///< 本周期判定的发射数 Rounds counted this cycle
+    float current_heat;    ///< 当前热量 Current heat
+    float heat_threshold;  ///< 开始降低弹频的剩余热量，以单发热量为单位
+                           ///< Remaining heat at which the fire rate starts to
+                           ///< drop, in units of the heat per round
+    bool allow_fire;       ///< 是否允许发射 Whether firing is allowed
+  };
+
+  /**
+   * @brief 构造 InfantryLauncher。
+   *        Construct InfantryLauncher.
+   *
+   * @param motor_fric_front_left 前左摩擦轮电机。
+   *                              Front-left friction wheel motor.
+   * @param motor_fric_front_right 前右摩擦轮电机。
+   *                               Front-right friction wheel motor.
+   * @param motor_fric_back_left 后左摩擦轮电机，此实现不使用。
+   *                             Back-left friction wheel motor, not used by
+   *                             this implementation.
+   * @param motor_fric_back_right 后右摩擦轮电机，此实现不使用。
+   *                              Back-right friction wheel motor, not used by
+   *                              this implementation.
+   * @param motor_trig 拨弹电机。
+   *                   Trigger motor.
+   * @param task_stack_depth 控制线程栈深，由外壳使用。
+   *                         Control thread stack depth, used by the shell.
+   * @param pid_param_trig_angle 拨弹角度环参数。
+   *                             Trigger angle-loop parameters.
+   * @param pid_param_trig_speed 拨弹速度环参数。
+   *                             Trigger speed-loop parameters.
+   * @param pid_param_fric_0 摩擦轮 0 速度环参数。
+   *                         Friction wheel 0 speed-loop parameters.
+   * @param pid_param_fric_1 摩擦轮 1 速度环参数。
+   *                         Friction wheel 1 speed-loop parameters.
+   * @param pid_param_fric_2 预留参数，此实现不使用。
+   *                         Reserved, not used by this implementation.
+   * @param pid_param_fric_3 预留参数，此实现不使用。
+   *                         Reserved, not used by this implementation.
+   * @param launch_param 发射机构参数。
+   *                     Launcher parameters.
+   * @param cmd CMD 实例指针。
+   *            Pointer to the CMD instance.
    */
   InfantryLauncher(RMMotor* motor_fric_front_left,
                    RMMotor* motor_fric_front_right,
@@ -127,8 +193,9 @@ class InfantryLauncher {
   }
 
   /**
-   * @brief 数据处理主入口
-   * @details 更新周期时间、电机反馈、拨弹角度，并刷新发射器总状态。
+   * @brief 更新电机反馈与拨弹盘角度，并刷新发射器状态。
+   *        Update the motor feedback and the trigger disc angle, and refresh
+   *        the launcher state.
    */
   void Update() {
     last_online_time_ = LibXR::Timebase::GetMicroseconds();
@@ -156,9 +223,9 @@ class InfantryLauncher {
   }
 
   /**
-   * @brief 状态机主入口
-   * @details
-   * 根据当前状态、命令输入和热量限制计算目标拨弹角度和摩擦轮转速，并处理卡弹逻辑。
+   * @brief 热量控制、拨弹状态机与话题发布，包含卡弹处理。
+   *        Heat control, trigger state machine and Topic publishing, including
+   *        jam handling.
    */
   void Solve() {
     UpdateHeatControl();
@@ -168,8 +235,9 @@ class InfantryLauncher {
   }
 
   /**
-   * @brief 控制输出
-   * @details 计算拨盘与摩擦轮控制量并下发到电机，包含电机状态检查和错误恢复。
+   * @brief 计算拨弹与摩擦轮的控制量并下发，包含电机状态检查与清错。
+   *        Compute the control values of the trigger and the friction wheels
+   *        and send them, including the motor state check and error clearing.
    */
   void Control() {
     float out_trig = 0.0f;
@@ -227,12 +295,21 @@ class InfantryLauncher {
     motor_control(motor_fric_1_, fric_1_fb, cmd_fric_1);
   }
 
+  /**
+   * @brief 设置控制周期。
+   *        Set the control period.
+   *
+   * @param dt 控制周期，单位 s。
+   *           Control period in s.
+   */
   void SetControlDt(float dt) { dt_ = dt; }
 
   /**
-   * @brief 设置摩擦轮模式事件
-   * @param mode 事件ID，对应 LauncherEvent
-   * @details 切换模式后同步复位相关PID，避免模式切换瞬态冲击。
+   * @brief 设置摩擦轮模式，并复位相关 PID。
+   *        Set the friction wheel mode and reset the related PIDs.
+   *
+   * @param mode 事件 ID，对应 LauncherEvent。
+   *             Event ID, corresponding to LauncherEvent.
    */
   void SetMode(uint32_t mode) {
     launcher_event_ = static_cast<LauncherEvent>(mode);
@@ -243,8 +320,9 @@ class InfantryLauncher {
   }
 
   /**
-   * @brief 失控处理
-   * @details 复位状态机与PID并关闭输出，确保发射机构进入安全状态。
+   * @brief 失去控制时复位状态机与 PID，失能拨弹电机并放松摩擦轮。
+   *        Reset the state machine and the PIDs when control is lost, disable
+   *        the trigger motor and relax the friction wheels.
    */
   void LostCtrl() {
     launcher_event_ = LauncherEvent::SET_FRICMODE_RELAX;
@@ -269,12 +347,21 @@ class InfantryLauncher {
 
 #ifdef DEBUG
   /**
-   * @brief 调试命令入口
+   * @brief 调试命令入口，实现位于 InfantryLauncherDebug.inl。
+   *        Debug command entry, implemented in InfantryLauncherDebug.inl.
+   *
+   * @param argc 参数数量。
+   *             Argument count.
+   * @param argv 参数数组。
+   *             Argument array.
+   * @return 命令返回值。
+   *         Command return value.
    */
   int DebugCommand(int argc, char** argv);
 #endif
 
-  /* 外壳可直接写入的命令数据 */
+  /// 外壳写入的发射命令
+  /// Fire command written by the shell
   CMD::LauncherCMD launcher_cmd_{};  // NOLINT
 
  private:
@@ -339,9 +426,9 @@ class InfantryLauncher {
   };
 
   /**
-   * @brief 更新发射器总状态
-   * @details 基于卡弹判据、摩擦轮模式与热量许可，计算
-   * RELAX/STOP/NORMAL/JAMMED。
+   * @brief 由卡弹判据、摩擦轮模式与热量许可计算发射状态。
+   *        Compute the launcher state from the jam criterion, the friction
+   *        wheel mode and the heat permission.
    */
   void UpdateLauncherState() {
     if (fabsf(param_trig_.torque) > launcher::param::JAM_TORQUE) {
@@ -364,8 +451,9 @@ class InfantryLauncher {
   }
 
   /**
-   * @brief 执行拨弹状态机
-   * @details 依次更新拨盘模式、拨盘目标角度和发射判定，并刷新按键边沿状态。
+   * @brief 依次更新拨弹模式、目标角度和出弹判定，并刷新开火边沿状态。
+   *        Update the trigger mode, the target angle and the round decision in
+   *        turn, and refresh the fire edge state.
    */
   void RunStateMachine() {
     auto now = LibXR::Timebase::GetMilliseconds();
@@ -376,9 +464,12 @@ class InfantryLauncher {
   }
 
   /**
-   * @brief 根据发射器状态切换拨盘模式
-   * @param now 当前时间戳
-   * @details 处理单发/连发/卡弹模式切换，其中连发由按键长按时长触发。
+   * @brief 按发射状态切换拨弹模式，长按超过阈值进入连发。
+   *        Switch the trigger mode from the launcher state; holding beyond the
+   *        threshold enters continuous fire.
+   *
+   * @param now 当前时间戳。
+   *            Current timestamp.
    */
   void UpdateTriggerMode(LibXR::MillisecondTimestamp now) {
     switch (launcher_state_) {
@@ -414,9 +505,12 @@ class InfantryLauncher {
   }
 
   /**
-   * @brief 更新拨盘目标角度
-   * @param now 当前时间戳
-   * @details 根据 TrigMode 生成目标角度；卡弹模式下周期切换正反向退弹角度。
+   * @brief 按拨弹模式生成目标角度，卡弹时周期切换正反向。
+   *        Generate the target angle from the trigger mode; during a jam the
+   *        direction alternates periodically.
+   *
+   * @param now 当前时间戳。
+   *            Current timestamp.
    */
   void UpdateTriggerSetpoint(LibXR::MillisecondTimestamp now) {
     switch (trig_mode_) {
@@ -472,9 +566,12 @@ class InfantryLauncher {
   }
 
   /**
-   * @brief 发射成功判定
-   * @param now 当前时间戳
-   * @details 通过摩擦轮转速跌落判定出弹，并更新热量计数和累计发射数。
+   * @brief 由摩擦轮转速下降判定出弹，并更新热量计数与累计发射数。
+   *        Detect a round leaving from the friction wheel speed drop, and
+   *        update the heat count and the cumulative rounds.
+   *
+   * @param now 当前时间戳。
+   *            Current timestamp.
    */
   void UpdateShotJudge(LibXR::MillisecondTimestamp now) {
     if (!shoot_active_) {
@@ -503,8 +600,9 @@ class InfantryLauncher {
   }
 
   /**
-   * @brief 更新发射时延
-   * @details 记录发射命令边沿时间与出弹时间差，输出 shoot_dt。
+   * @brief 记录开火命令边沿到出弹的时间差，作为 shoot_dt。
+   *        Record the time from the fire command edge to the round leaving as
+   *        shoot_dt.
    */
   void UpdateShotLatency() {
     auto now = LibXR::Timebase::GetMilliseconds();
@@ -518,8 +616,9 @@ class InfantryLauncher {
   }
 
   /**
-   * @brief 根据模式设置摩擦轮目标转速
-   * @details RELAX/SAFE 下目标转速为0，READY 下使用配置转速。
+   * @brief 按摩擦轮模式设置目标转速：RELAX 与 SAFE 为 0，READY 为配置转速。
+   *        Set the target speed from the friction wheel mode: 0 in RELAX and
+   *        SAFE, the configured speed in READY.
    */
   void SetFricTargetByEvent() {
     switch (launcher_event_) {
@@ -536,8 +635,9 @@ class InfantryLauncher {
   }
 
   /**
-   * @brief 热量管理与弹频调度
-   * @details 周期更新当前热量，计算是否允许发射，并依据剩余热量调整目标弹频。
+   * @brief 周期更新热量，计算是否允许发射，并按剩余热量调整弹频。
+   *        Update the heat periodically, decide whether firing is allowed and
+   *        adjust the fire rate from the remaining heat.
    */
   void UpdateHeatControl() {
     auto now = LibXR::Timebase::GetMilliseconds();
@@ -580,8 +680,8 @@ class InfantryLauncher {
   }
 
   /**
-   * @brief 发布调试与统计话题
-   * @details 发布发射等待时间、累计发射数和当前弹频。
+   * @brief 发布 shoot_dt、shoot_number 与 trig_freq 三个 Topic。
+   *        Publish the three Topics shoot_dt, shoot_number and trig_freq.
    */
   void PublishTopics() {
     shoot_waiting_.Publish(shoot_dt_);
@@ -590,11 +690,16 @@ class InfantryLauncher {
   }
 
   /**
-   * @brief 拨盘控制解算
-   * @param out_trig 拨盘控制输出
-   * @param target_trig_angle 拨盘目标角度
-   * @param dt 控制周期
-   * @details 角度环生成参考速度，速度环生成最终控制输出，并进行速度限幅。
+   * @brief 角度环生成参考速度并限幅，速度环生成拨弹控制量。
+   *        The angle loop generates a limited speed reference and the speed
+   *        loop generates the trigger control value.
+   *
+   * @param out_trig 输出：拨弹控制量。
+   *                 Output: trigger control value.
+   * @param target_trig_angle 拨弹盘目标角度。
+   *                          Trigger disc target angle.
+   * @param dt 控制周期，单位 s。
+   *           Control period in s.
    */
   void TrigControl(float& out_trig, float target_trig_angle, float dt) {
     float plate_omega_ref = pid_trig_angle_.Calculate(
@@ -610,12 +715,18 @@ class InfantryLauncher {
   }
 
   /**
-   * @brief 摩擦轮控制解算
-   * @param out_fric_0 摩擦轮0控制输出
-   * @param out_fric_1 摩擦轮1控制输出
-   * @param target_rpm 摩擦轮目标转速
-   * @param dt 控制周期
-   * @details 速度环计算摩擦轮输出，SAFE 模式下对输出限幅做缓停处理。
+   * @brief 速度环计算摩擦轮控制量，SAFE 模式下调整输出限幅。
+   *        The speed loops compute the friction wheel control values, and the
+   *        output limit is adjusted in SAFE mode.
+   *
+   * @param out_fric_0 输出：摩擦轮 0 控制量。
+   *                   Output: friction wheel 0 control value.
+   * @param out_fric_1 输出：摩擦轮 1 控制量。
+   *                   Output: friction wheel 1 control value.
+   * @param target_rpm 摩擦轮目标转速，单位 rpm。
+   *                   Friction wheel target speed in rpm.
+   * @param dt 控制周期，单位 s。
+   *           Control period in s.
    */
   void FricControl(float& out_fric_0, float& out_fric_1, float target_rpm,
                    float dt) {
