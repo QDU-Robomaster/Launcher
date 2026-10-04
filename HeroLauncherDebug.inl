@@ -119,8 +119,6 @@ inline int HeroLauncher::DebugCommand(int argc, char** argv) {
                           self->fric_target_speed_[2]),
       DEBUG_CORE_LIVE_F32(HeroLauncher, "fric_target_3", MASK_SHOT,
                           self->fric_target_speed_[3]),
-      DEBUG_CORE_LIVE_F32(HeroLauncher, "current_back_left", MASK_SHOT,
-                          self->current_back_left_),
   };
 
 #undef HERO_MOTOR_FIELDS

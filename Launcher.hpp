@@ -12,6 +12,8 @@ depends:
   ref: same-or-dev
 - id: QDU-Robomaster/DebugCore
   ref: same-or-dev
+- id: QDU-Robomaster/Referee
+  ref: same-or-dev
 === END MANIFEST === */
 // clang-format on
 
@@ -21,6 +23,7 @@ depends:
 #include "HeroLauncher.hpp"
 #include "InfantryLauncher.hpp"
 #include "RMMotor.hpp"
+#include "Referee.hpp"
 #include "event.hpp"
 #include "libxr_cb.hpp"
 #include "libxr_def.hpp"
@@ -98,6 +101,9 @@ class Launcher {
     const char* launcher_cmd_topic_name;  ///< 订阅的发射控制命令 Topic 名称
                                           ///< Name of the subscribed launcher
                                           ///< command Topic
+    const char* launcher_ref_topic_name;  ///< 订阅的裁判系统发射数据 Topic 名称
+                                          ///< Name of the subscribed referee
+                                          ///< launcher data Topic
   };
 
   /**
@@ -129,34 +135,34 @@ class Launcher {
       RMMotor& motor_fric_front_left, RMMotor& motor_fric_front_right,
       RMMotor* motor_fric_back_left, RMMotor* motor_fric_back_right,
       RMMotor& motor_trig, CMD& cmd, LibXR::RamFS& ramfs,
-      const Param& param = {.task_stack_depth = 4096,
+      const Param& param = {.task_stack_depth = 1536,
                             .pid_trig_angle = {.k = 1.0f,
-                                               .p = 4000.0f,
+                                               .p = 40.0f,
+                                               .i = 0.1f,
+                                               .d = 0.0f,
+                                               .i_limit = 0.0f,
+                                               .out_limit = 0.0f,
+                                               .cycle = false},
+                            .pid_trig_speed = {.k = 1.0f,
+                                               .p = 0.15f,
                                                .i = 0.0f,
                                                .d = 0.0f,
                                                .i_limit = 0.0f,
-                                               .out_limit = 4000.0f,
+                                               .out_limit = 0.0f,
                                                .cycle = false},
-                            .pid_trig_speed = {.k = 1.0f,
-                                               .p = 0.0012f,
-                                               .i = 0.0005f,
-                                               .d = 0.0f,
-                                               .i_limit = 1.0f,
-                                               .out_limit = 1.0f,
-                                               .cycle = false},
-                            .pid_fric_speed_0 = {.k = 1.0f,
-                                                 .p = 0.002f,
+                            .pid_fric_speed_0 = {.k = 0.8f,
+                                                 .p = 0.0003f,
                                                  .i = 0.0f,
                                                  .d = 0.0f,
                                                  .i_limit = 0.0f,
-                                                 .out_limit = 1.0f,
+                                                 .out_limit = 0.6f,
                                                  .cycle = false},
-                            .pid_fric_speed_1 = {.k = 1.0f,
-                                                 .p = 0.002f,
+                            .pid_fric_speed_1 = {.k = 0.8f,
+                                                 .p = 0.0003f,
                                                  .i = 0.0f,
                                                  .d = 0.0f,
                                                  .i_limit = 0.0f,
-                                                 .out_limit = 1.0f,
+                                                 .out_limit = 0.6f,
                                                  .cycle = false},
                             .pid_fric_speed_2 = {.k = 1.0f,
                                                  .p = 0.002f,
@@ -172,13 +178,14 @@ class Launcher {
                                                  .i_limit = 0.0f,
                                                  .out_limit = 1.0f,
                                                  .cycle = false},
-                            .launcher_param = {.fric1_setpoint_speed = 4950.0f,
+                            .launcher_param = {.fric1_setpoint_speed = 6500.0f,
                                                .fric2_setpoint_speed = 3820.0f,
-                                               .trig_gear_ratio = 19.2032f,
-                                               .num_trig_tooth = 6,
-                                               .trig_freq_ = 0.0f},
+                                               .trig_gear_ratio = 36.0f,
+                                               .num_trig_tooth = 10,
+                                               .trig_freq_ = 16.0f},
                             .thread_priority = LibXR::Thread::Priority::HIGH,
-                            .launcher_cmd_topic_name = "launcher_cmd"})
+                            .launcher_cmd_topic_name = "launcher_cmd",
+                            .launcher_ref_topic_name = "launcher_ref"})
       : launcher_(&motor_fric_front_left, &motor_fric_front_right,
                   motor_fric_back_left, motor_fric_back_right, &motor_trig,
                   param.task_stack_depth, param.pid_trig_angle,
@@ -208,6 +215,7 @@ class Launcher {
 #endif
 
     launcher_cmd_topic_name_ = param.launcher_cmd_topic_name;
+    launcher_ref_topic_name_ = param.launcher_ref_topic_name;
     thread_.Create(this, ThreadFunc, "LauncherThread", param.task_stack_depth,
                    param.thread_priority);
 
@@ -268,6 +276,7 @@ class Launcher {
   LauncherType launcher_;
   LibXR::Event launcher_event_;
   const char* launcher_cmd_topic_name_ = nullptr;
+  const char* launcher_ref_topic_name_ = nullptr;
   LibXR::Thread thread_;
   LibXR::Mutex mutex_;
 
@@ -277,12 +286,14 @@ class Launcher {
 
   static void ThreadFunc(Launcher* self) {
     LibXR::Topic::ASyncSubscriber<CMD::LauncherCMD> cmd_sub(self->launcher_cmd_topic_name_);
+    LibXR::Topic::ASyncSubscriber<Referee::LauncherPack> launcher_ref(
+        self->launcher_ref_topic_name_);
     cmd_sub.StartWaiting();
-    self->last_wakeup_time_ = LibXR::Timebase::GetMilliseconds();
+    launcher_ref.StartWaiting();
     self->last_online_time_ = LibXR::Timebase::GetMicroseconds();
 
     while (true) {
-      LibXR::Thread::SleepUntil(self->last_wakeup_time_, 2);
+      LibXR::Thread::Sleep(2);
 
       auto now = LibXR::Timebase::GetMicroseconds();
       self->launcher_.SetControlDt((now - self->last_online_time_).ToSecondf());
@@ -293,6 +304,11 @@ class Launcher {
         cmd_sub.StartWaiting();
       }
 
+      if (launcher_ref.Available()) {
+        self->launcher_.ref_data_ = launcher_ref.GetData();
+        launcher_ref.StartWaiting();
+      }
+
       self->mutex_.Lock();
       self->launcher_.Update();
       self->launcher_.Solve();
@@ -301,6 +317,5 @@ class Launcher {
     }
   }
 
-  LibXR::MillisecondTimestamp last_wakeup_time_ = 0;
   LibXR::MicrosecondTimestamp last_online_time_ = 0;
 };

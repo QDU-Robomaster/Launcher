@@ -13,6 +13,7 @@
 #endif
 #include "Motor.hpp"
 #include "RMMotor.hpp"
+#include "Referee.hpp"
 #include "cycle_value.hpp"
 #include "libxr_def.hpp"
 #include "libxr_time.hpp"
@@ -26,13 +27,14 @@ namespace launcher::param {
 constexpr float TRIG_STEP = static_cast<float>(LibXR::TWO_PI) / 10.0f;
 /// 判定卡弹的拨弹电机力矩
 /// Trigger motor torque that is taken as a jam
-constexpr float JAM_TORQUE = 0.1f;
+constexpr float JAM_TORQUE = 0.015f;
 /// 判定出弹时摩擦轮转速相对目标的下降量 (rpm)
 /// Friction wheel speed drop below the target taken as a round leaving (rpm)
-constexpr float FRIC_DROP_RPM = 50.0f;
-/// 卡弹处理中正反转的切换间隔 (s)
-/// Direction switching interval during jam handling (s)
-constexpr float JAM_TOGGLE_INTERVAL_SEC = 0.02f;
+constexpr float FRIC_DROP_RPM = 218.0f;
+/// 距上一个卡弹处理周期超过该时间才重新设定退弹目标 (s)
+/// Time since the previous jam handling cycle after which a new back-off
+/// target is set (s)
+constexpr float JAM_TOGGLE_INTERVAL_SEC = 0.08f;
 /// 按住超过该时间转为连发 (s)
 /// Holding for longer than this switches to continuous fire (s)
 constexpr float LONG_PRESS_THRESHOLD_SEC = 0.5f;
@@ -83,15 +85,6 @@ class InfantryLauncher {
     SINGLE,    ///< 单发 Single shot
     CONTINUE,  ///< 连发 Continuous fire
     JAM,       ///< 卡弹处理 Jam handling
-  };
-
-  /**
-   * @brief 热量相关的裁判系统数据。
-   *        Heat-related referee system data.
-   */
-  struct RefereeData {
-    float heat_limit;    ///< 热量上限 Heat limit
-    float heat_cooling;  ///< 冷却值 Cooling value
   };
 
   /**
@@ -200,11 +193,6 @@ class InfantryLauncher {
   void Update() {
     last_online_time_ = LibXR::Timebase::GetMicroseconds();
 
-    referee_data_.heat_limit = 260.0f;
-    referee_data_.heat_cooling = 20.0f;
-    heat_limit_.single_heat = 10.0f;
-    heat_limit_.heat_threshold = 2.0f;
-
     motor_fric_0_->Update();
     motor_fric_1_->Update();
     motor_trig_->Update();
@@ -273,10 +261,10 @@ class InfantryLauncher {
                                     .reduction_ratio = 36.0f,
                                     .velocity = out_trig};
     auto cmd_fric_0 = Motor::MotorCmd{.mode = Motor::ControlMode::MODE_CURRENT,
-                                      .reduction_ratio = 19.0f,
+                                      .reduction_ratio = 1.0f,
                                       .velocity = out_fric_0};
     auto cmd_fric_1 = Motor::MotorCmd{.mode = Motor::ControlMode::MODE_CURRENT,
-                                      .reduction_ratio = 19.0f,
+                                      .reduction_ratio = 1.0f,
                                       .velocity = out_fric_1};
 
     auto motor_control = [&](Motor* motor, const Motor::Feedback& fb,
@@ -363,6 +351,10 @@ class InfantryLauncher {
   /// 外壳写入的发射命令
   /// Fire command written by the shell
   CMD::LauncherCMD launcher_cmd_{};  // NOLINT
+  /// 外壳写入的裁判系统发射数据，提供热量上限与冷却值
+  /// Referee launcher data written by the shell, providing the heat limit and
+  /// the cooling value
+  Referee::LauncherPack ref_data_{};  // NOLINT
 
  private:
   RMMotor* motor_fric_0_;
@@ -416,12 +408,11 @@ class InfantryLauncher {
   TrigMode trig_mode_ = TrigMode::RELAX;
   TrigMode last_trig_mode_ = TrigMode::RELAX;
 
-  RefereeData referee_data_{.heat_limit = 0.0f, .heat_cooling = 0.0f};
   HeatLimit heat_limit_{
-      .single_heat = 0.0f,
+      .single_heat = 10.0f,
       .launched_num = 0.0f,
       .current_heat = 0.0f,
-      .heat_threshold = 0.0f,
+      .heat_threshold = 2.30f,
       .allow_fire = true,
   };
 
@@ -505,9 +496,9 @@ class InfantryLauncher {
   }
 
   /**
-   * @brief 按拨弹模式生成目标角度，卡弹时周期切换正反向。
-   *        Generate the target angle from the trigger mode; during a jam the
-   *        direction alternates periodically.
+   * @brief 按拨弹模式生成目标角度；进入卡弹处理时拨弹盘反转 0.8 发的角度。
+   *        Generate the target angle from the trigger mode; on entering jam
+   *        handling the trigger disc turns back by 0.8 of the per-round angle.
    *
    * @param now 当前时间戳。
    *            Current timestamp.
@@ -554,11 +545,11 @@ class InfantryLauncher {
             is_reverse_ = true;
           }
           target_trig_angle_ =
-              trig_angle_ + (is_reverse_ ? -2.0f * launcher::param::TRIG_STEP
+              trig_angle_ + (is_reverse_ ? -0.80f * launcher::param::TRIG_STEP
                                          : launcher::param::TRIG_STEP);
           is_reverse_ = !is_reverse_;
-          last_jam_time_ = now;
         }
+        last_jam_time_ = now;
       } break;
     }
 
@@ -635,9 +626,11 @@ class InfantryLauncher {
   }
 
   /**
-   * @brief 周期更新热量，计算是否允许发射，并按剩余热量调整弹频。
-   *        Update the heat periodically, decide whether firing is allowed and
-   *        adjust the fire rate from the remaining heat.
+   * @brief 按裁判系统的热量上限与冷却值周期更新热量，计算是否允许发射，并按
+   *        剩余热量调整弹频。
+   *        Update the heat periodically from the referee heat limit and cooling
+   *        value, decide whether firing is allowed and adjust the fire rate
+   *        from the remaining heat.
    */
   void UpdateHeatControl() {
     auto now = LibXR::Timebase::GetMilliseconds();
@@ -651,25 +644,28 @@ class InfantryLauncher {
         heat_limit_.single_heat * heat_limit_.launched_num;
     heat_limit_.launched_num = 0.0f;
 
-    if (heat_limit_.current_heat <
-        static_cast<float>(referee_data_.heat_cooling / 10.0f)) {
+    const float HEAT_COOLING = ref_data_.rs.shooter_cooling_value;
+    const float COOLING_PER_TICK =
+        HEAT_COOLING * launcher::param::HEAT_TICK_SEC;
+    if (heat_limit_.current_heat < COOLING_PER_TICK) {
       heat_limit_.current_heat = 0.0f;
     } else {
-      heat_limit_.current_heat -=
-          static_cast<float>(referee_data_.heat_cooling / 10.0f);
+      heat_limit_.current_heat -= COOLING_PER_TICK;
     }
 
-    float residuary_heat = referee_data_.heat_limit - heat_limit_.current_heat;
+    float residuary_heat =
+        static_cast<float>(ref_data_.rs.shooter_heat_limit) -
+        heat_limit_.current_heat;
     heat_limit_.allow_fire = residuary_heat > heat_limit_.single_heat;
 
+    /* 不允许发射时弹频保持上一次的值 */
     if (!heat_limit_.allow_fire) {
-      trig_freq_ = referee_data_.heat_cooling / heat_limit_.single_heat;
       return;
     }
 
     if (residuary_heat <=
         heat_limit_.single_heat * heat_limit_.heat_threshold) {
-      float safe_freq = referee_data_.heat_cooling / heat_limit_.single_heat;
+      float safe_freq = HEAT_COOLING / heat_limit_.single_heat;
       float ratio = residuary_heat /
                     (heat_limit_.single_heat * heat_limit_.heat_threshold);
       trig_freq_ = ratio * (param_.expect_trig_freq_ - safe_freq) + safe_freq;
@@ -715,9 +711,9 @@ class InfantryLauncher {
   }
 
   /**
-   * @brief 速度环计算摩擦轮控制量，SAFE 模式下调整输出限幅。
-   *        The speed loops compute the friction wheel control values, and the
-   *        output limit is adjusted in SAFE mode.
+   * @brief 速度环计算摩擦轮控制量，SAFE 模式下控制量缩小为 1/50。
+   *        The speed loops compute the friction wheel control values, which are
+   *        scaled down to 1/50 in SAFE mode.
    *
    * @param out_fric_0 输出：摩擦轮 0 控制量。
    *                   Output: friction wheel 0 control value.
@@ -734,8 +730,8 @@ class InfantryLauncher {
     out_fric_1 = pid_fric_1_.Calculate(target_rpm, param_fric_1_.velocity, dt);
 
     if (launcher_event_ == LauncherEvent::SET_FRICMODE_SAFE) {
-      pid_fric_0_.SetOutLimit(1.5f);
-      pid_fric_1_.SetOutLimit(1.5f);
+      out_fric_0 /= 50.0f;
+      out_fric_1 /= 50.0f;
     }
   }
 };

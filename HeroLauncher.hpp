@@ -6,6 +6,7 @@
 #include "CMD.hpp"
 #include "Motor.hpp"
 #include "RMMotor.hpp"
+#include "Referee.hpp"
 #include "cycle_value.hpp"
 #include "libxr_def.hpp"
 #include "libxr_time.hpp"
@@ -31,14 +32,11 @@ class HeroLauncher {
   /// 首发标定完成后，设定角相对零点的后退量 (rad)
   /// Setpoint offset behind the zero point after the first-shot calibration
   /// (rad)
-  static constexpr float TRIG_ZERO_ANGLE_OFFSET = 0.50f;
+  static constexpr float TRIG_ZERO_ANGLE_OFFSET = 0.90f;
   /// 首发标定时每周期后退的角度 (rad)
   /// Angle moved back per cycle during the first-shot calibration (rad)
   static constexpr float TRIG_LOADING_ANGLE_STEP =
-      static_cast<float>(LibXR::TWO_PI) / 1002.0f;
-  /// M3508 的转矩常数，用于由力矩换算电流
-  /// Torque constant of the M3508, used to convert torque to current
-  static constexpr float M3508_TORQUE_CONSTANT = 0.3f;
+      static_cast<float>(LibXR::TWO_PI) / 1000.0f;
 
   /**
    * @brief 拨弹模式。
@@ -60,16 +58,6 @@ class HeroLauncher {
     SET_FRICMODE_SAFE,   ///< 安全：目标转速为 0 Safe: target speed 0
     SET_FRICMODE_READY,  ///< 就绪：按目标转速运行 Ready: run at the target
                          ///< speed
-  };
-
-  /**
-   * @brief 裁判系统数据。
-   *        Referee system data.
-   */
-  struct RefereeData {
-    float heat_limit;    ///< 热量上限 Heat limit
-    float cooling_rate;  ///< 冷却速率 Cooling rate
-    uint8_t level;       ///< 机器人等级 Robot level
   };
 
   /**
@@ -184,7 +172,7 @@ class HeroLauncher {
     motor_fric_front_right_->Update();
     motor_fric_back_left_->Update();
     motor_fric_back_right_->Update();
-    motor_trig_->Update();
+    motor_state_ = motor_trig_->Update();
 
     param_motor_fric_front_left_ = motor_fric_front_left_->GetFeedback();
     param_motor_fric_front_right_ = motor_fric_front_right_->GetFeedback();
@@ -202,30 +190,33 @@ class HeroLauncher {
    *        update.
    */
   void Solve() {
+    SoftStart();
     HeatLimit();
     UpdateTrigMode();
     UpdateFricTarget();
   }
 
   /**
-   * @brief 拨弹控制、出弹检测以及摩擦轮与拨弹的 PID 输出。
+   * @brief 拨弹控制、出弹检测以及摩擦轮与拨弹的 PID 输出；拨弹电机更新失败时
+   *        不下发控制量并复位发射状态。
    *        Trigger control, round detection and the PID outputs of the friction
-   *        wheels and the trigger.
+   *        wheels and the trigger; when the trigger motor update fails, no
+   *        output is sent and the launch state is reset.
    */
   void Control() {
-    /*电流cur=tor/K*/
-    current_back_left_ =
-        param_motor_fric_back_left_.torque / M3508_TORQUE_CONSTANT;
-
-    if (first_loading_) {
-      FirstLoadingControl();
+    if (motor_state_ == LibXR::ErrorCode::OK) {
+      if (first_loading_) {
+        FirstLoadingControl();
+      } else {
+        NormalFireControl();
+      }
+      real_launch_delay_ =
+          (finish_fire_time_ - start_fire_time_).ToMillisecond();
+      FricPidControl();
+      TrigPidControl();
     } else {
-      NormalFireControl();
+      Reset();
     }
-    real_launch_delay_ = (finish_fire_time_ - start_fire_time_).ToMillisecond();
-
-    FricPidControl();
-    TrigPidControl();
   }
 
   /**
@@ -240,13 +231,13 @@ class HeroLauncher {
   }
 
   /**
-   * @brief 失去控制时复位全部发射状态，摩擦轮模式切换到 SAFE。
+   * @brief 失去控制时复位全部发射状态，摩擦轮模式切换到 RELAX。
    *        Reset all launch states when control is lost and switch the friction
-   *        wheel mode to SAFE.
+   *        wheel mode to RELAX.
    */
   void LostCtrl() {
     // 重置所有发射相关的状态变量到初始模式
-    launcher_event_ = LauncherEvent::SET_FRICMODE_SAFE;
+    launcher_event_ = LauncherEvent::SET_FRICMODE_RELAX;
     trig_mode_ = TrigMode::RELAX;
 
     // 重置发射控制标志
@@ -286,6 +277,37 @@ class HeroLauncher {
 
     // 重置延迟计算
     real_launch_delay_ = 0.0f;
+
+    soft_start_finish_ = false;
+  }
+
+  /**
+   * @brief 把发射标志、时间戳、拨弹角度和软启动状态复位到初始值。
+   *        Reset the launch flags, timestamps, trigger angles and soft-start
+   *        state to their initial values.
+   */
+  void Reset() {
+    first_loading_ = true;
+    fire_flag_ = false;
+    enable_fire_ = false;
+    mark_launch_ = false;
+    press_continue_ = false;
+
+    fired_ = 0;
+
+    start_fire_time_ = 0;
+    finish_fire_time_ = 0;
+
+    launcher_cmd_.isfire = false;
+    last_fire_notify_ = false;
+
+    trig_angle_ = 0.0f;
+    trig_zero_angle_ = 0.0f;
+    trig_setpoint_angle_ = 0.0f;
+
+    delay_time_ = 0;
+
+    soft_start_finish_ = false;
   }
 
   /**
@@ -315,15 +337,21 @@ class HeroLauncher {
   /// 外壳写入的发射命令
   /// Fire command written by the shell
   CMD::LauncherCMD launcher_cmd_;  // NOLINT
+  /// 外壳写入的裁判系统发射数据，提供热量上限与冷却值
+  /// Referee launcher data written by the shell, providing the heat limit and
+  /// the cooling value
+  Referee::LauncherPack ref_data_{};  // NOLINT
 
  private:
   LauncherParam param_;
-  RefereeData referee_data_;
+
   TrigMode trig_mode_ = TrigMode::SAFE;
 
   HeatControl heat_ctrl_;
 
   bool first_loading_ = true;
+
+  bool soft_start_finish_ = false;
 
   float dt_ = 0.0f;
 
@@ -340,6 +368,8 @@ class HeroLauncher {
   RMMotor* motor_fric_back_left_;
   RMMotor* motor_fric_back_right_;
   RMMotor* motor_trig_;
+
+  LibXR::ErrorCode motor_state_;
 
   float trig_setpoint_angle_ = 0.0f;
   float trig_setpoint_speed_ = 0.0f;
@@ -359,8 +389,6 @@ class HeroLauncher {
       LibXR::PID<float>(LibXR::PID<float>::Param()),
       LibXR::PID<float>(LibXR::PID<float>::Param())};
 
-  float current_back_left_ = 0.0f;
-
   bool fire_flag_ = false;    // 发射命令标志位
   uint8_t fired_ = 0;         // 已发射弹丸
   bool enable_fire_ = false;  // 拨弹盘旋转命令发出标志位
@@ -374,7 +402,7 @@ class HeroLauncher {
   bool press_continue_ = false;
   LibXR::MillisecondTimestamp fire_press_time_ = 0;
 
-  uint8_t delay_time_ = 0;
+  uint16_t delay_time_ = 0;
 
   LauncherEvent launcher_event_ = LauncherEvent::SET_FRICMODE_RELAX;
 
@@ -437,9 +465,9 @@ class HeroLauncher {
   }
 
   /**
-   * @brief 按摩擦轮模式设置摩擦轮目标转速与输出限幅。
-   *        Set the friction wheel target speeds and output limits from the
-   *        friction wheel mode.
+   * @brief 按摩擦轮模式设置摩擦轮目标转速；RELAX 与 SAFE 下同时复位发射状态。
+   *        Set the friction wheel target speeds from the friction wheel mode;
+   *        RELAX and SAFE also reset the launch state.
    */
   void UpdateFricTarget() {
     switch (launcher_event_) {
@@ -449,22 +477,14 @@ class HeroLauncher {
         fric_target_speed_[1] = 0;
         fric_target_speed_[2] = 0;
         fric_target_speed_[3] = 0;
-        for (LibXR::PID<float>& i : fric_speed_pid_) {
-          i.SetOutLimit(0.1f);
-        }
+        soft_start_finish_ = false;
+        Reset();
         break;
       case LauncherEvent::SET_FRICMODE_READY:
         fric_target_speed_[0] = param_.fric2_setpoint_speed;
         fric_target_speed_[1] = param_.fric2_setpoint_speed;
         fric_target_speed_[2] = param_.fric1_setpoint_speed;
         fric_target_speed_[3] = param_.fric1_setpoint_speed;
-        if (motor_fric_back_left_->GetFeedback().velocity >
-            param_.fric1_setpoint_speed) {
-          fric_speed_pid_[0].SetOutLimit(1.0f);
-          fric_speed_pid_[1].SetOutLimit(1.0f);
-          fric_speed_pid_[2].SetOutLimit(0.8f);
-          fric_speed_pid_[3].SetOutLimit(0.8f);
-        }
         break;
       default:
         break;
@@ -472,9 +492,10 @@ class HeroLauncher {
   }
 
   /**
-   * @brief 首发标定：拨弹盘后退直到检测到出弹，并记录零点。
-   *        First-shot calibration: move the trigger disc back until a round is
-   *        detected and record the zero point.
+   * @brief 首发标定：拨弹盘后退，摩擦轮软启动完成后检测到出弹时记录零点。
+   *        First-shot calibration: move the trigger disc back and record the
+   *        zero point when a round is detected after the friction wheel soft
+   *        start has finished.
    */
   void FirstLoadingControl() {
     if (trig_mode_ == TrigMode::SINGLE) {
@@ -491,9 +512,8 @@ class HeroLauncher {
       delay_time_++;
     }
 
-    if (delay_time_ > 50) {  // 延迟50个控制周期
-      if (std::abs(param_motor_fric_back_left_.torque) / M3508_TORQUE_CONSTANT >
-          0.5) {                         // 发弹检测
+    if (soft_start_finish_) {
+      if (std::abs(param_motor_fric_back_left_.torque) > 0.04) {  // 发弹检测
         trig_zero_angle_ = trig_angle_;  // 获取电机当前位置
         trig_setpoint_angle_ = trig_angle_ - TRIG_ZERO_ANGLE_OFFSET;  // 偏移量
 
@@ -507,14 +527,13 @@ class HeroLauncher {
   }
 
   /**
-   * @brief 常规发弹：热量允许时推进一格并检测出弹。
-   *        Normal firing: advance one tooth when heat allows and detect the
-   *        round.
+   * @brief 常规发弹：上一发已判定出弹且热量允许时推进一格，并检测出弹。
+   *        Normal firing: advance one tooth when the previous round has been
+   *        detected and heat allows, and detect the round.
    */
   void NormalFireControl() {
     if (trig_mode_ == TrigMode::SINGLE) {
-      mark_launch_ = false;
-      if (!enable_fire_) {
+      if (!enable_fire_ && mark_launch_) {
         if (heat_ctrl_.available_shot) {
           trig_setpoint_angle_ -= static_cast<float>(LibXR::TWO_PI) /
                                   static_cast<float>(param_.num_trig_tooth);
@@ -529,17 +548,17 @@ class HeroLauncher {
     }
     now_ = LibXR::Timebase::GetMilliseconds();
 
-    // 发射超时检测：超过 100 ms 未检测到出弹则重置状态
-    if (start_fire_time_ > 0 && (now_ - start_fire_time_ > 100) &&
+    // 发射超时检测：超过 1000 ms 未检测到出弹则重置状态
+    if (start_fire_time_ > 0 && (now_ - start_fire_time_ > 1000) &&
         !mark_launch_) {
       fire_flag_ = false;
       enable_fire_ = false;
+      mark_launch_ = true;
       start_fire_time_ = now_;
     }
 
     if (!mark_launch_) {  // 发弹状态检测
-      if (std::abs(param_motor_fric_back_left_.torque) / M3508_TORQUE_CONSTANT >
-          0.5) {
+      if (std::abs(param_motor_fric_back_left_.torque) > 0.04) {
         fire_flag_ = false;
 
         fired_++;
@@ -597,15 +616,38 @@ class HeroLauncher {
   }
 
   /**
-   * @brief 计算热量并更新可发射数量。
-   *        Compute the heat and update the number of available shots.
+   * @brief 摩擦轮软启动：后左摩擦轮转速超过一级目标转速之前，四个速度环的输出
+   *        限幅为 0.05，之后为 1.0。
+   *        Friction wheel soft start: until the back-left wheel speed exceeds
+   *        the first-stage target speed, the output limit of the four speed
+   *        loops is 0.05, and 1.0 afterwards.
+   */
+  void SoftStart() {
+    if (!soft_start_finish_) {
+      for (LibXR::PID<float>& i : fric_speed_pid_) {
+        i.SetOutLimit(0.05f);
+      }
+
+      if (motor_fric_back_left_->GetFeedback().velocity >
+          param_.fric1_setpoint_speed) {
+        soft_start_finish_ = true;
+      }
+    } else {
+      for (LibXR::PID<float>& i : fric_speed_pid_) {
+        i.SetOutLimit(1.0f);
+      }
+    }
+  }
+
+  /**
+   * @brief 按裁判系统的热量上限与冷却值计算热量，并更新可发射数量。
+   *        Compute the heat from the referee heat limit and cooling value, and
+   *        update the number of available shots.
    */
   void HeatLimit() {
-    heat_ctrl_.heat_limit = referee_data_.heat_limit;
-    heat_ctrl_.heat_limit = 129.0f;  // 调试用固定值
+    heat_ctrl_.heat_limit = ref_data_.rs.shooter_heat_limit;
     heat_ctrl_.heat_increase = 100.0f;
-    heat_ctrl_.cooling_rate = referee_data_.cooling_rate;
-    heat_ctrl_.cooling_rate = 13.0f;  // 调试用固定值
+    heat_ctrl_.cooling_rate = ref_data_.rs.shooter_cooling_value;
     if (fired_ >= 1) {
       heat_ctrl_.heat += heat_ctrl_.heat_increase;
       fired_ = 0;
