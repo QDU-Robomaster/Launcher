@@ -155,9 +155,9 @@ Configuration parameters (`param`, with the hero parameters as defaults; the PID
 
 ## 6. 配置示例 / Configuration Example
 
-`xrobot instance add QDU-Robomaster/Launcher` 写入的实例带有空的 `template_args`，在其中选择 `HeroLauncher` 或 `InfantryLauncher`，依赖填写为其他模块实例的 id：电机取自 `QDU-Robomaster/RMMotor` 实例，`cmd` 取自 `QDU-Robomaster/CMD` 实例，`ramfs` 取自 BSP 中注册的 RamFS 名称（`XR_REGISTER`），它们须在本实例之前列出；指针依赖写成 `'&id'`。下例为 `HeroLauncher`：
+`xrobot instance add QDU-Robomaster/Launcher --template-arg HeroLauncher` 写入的实例，`template_args` 取 `HeroLauncher` 或 `InfantryLauncher`，依赖填写为其他模块实例的 id：电机取自 `QDU-Robomaster/RMMotor` 实例，`cmd` 取自 `QDU-Robomaster/CMD` 实例，`ramfs` 取自 BSP 中注册的 RamFS 名称（`XR_REGISTER`），它们须在本实例之前列出；指针依赖写成 `'&id'`。下例为 `HeroLauncher`：
 
-An instance written by `xrobot instance add QDU-Robomaster/Launcher` has an empty `template_args`, in which `HeroLauncher` or `InfantryLauncher` is selected, and the dependencies are set to the ids of other Module instances: the motors come from `QDU-Robomaster/RMMotor` instances, `cmd` from a `QDU-Robomaster/CMD` instance, and `ramfs` from a RamFS name registered by the BSP (`XR_REGISTER`); they are listed before this instance, and pointer dependencies are written as `'&id'`. The example uses `HeroLauncher`:
+An instance written by `xrobot instance add QDU-Robomaster/Launcher --template-arg HeroLauncher`; `template_args` takes `HeroLauncher` or `InfantryLauncher`, and the dependencies are set to the ids of other Module instances: the motors come from `QDU-Robomaster/RMMotor` instances, `cmd` from a `QDU-Robomaster/CMD` instance, and `ramfs` from a RamFS name registered by the BSP (`XR_REGISTER`); they are listed before this instance, and pointer dependencies are written as `'&id'`. The example uses `HeroLauncher`:
 
 ```yaml
 modules:
